@@ -5,14 +5,16 @@ Serializers pour l'application users
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, DriverProfile, TechnicianProfile
+from .models import User, DriverProfile, TechnicianProfile, School
 
 
 class UserSerializer(serializers.ModelSerializer):
     full_name        = serializers.CharField(source='get_full_name', read_only=True)
     role_display     = serializers.CharField(source='get_role_display', read_only=True)
     department_name  = serializers.CharField(source='department.name', read_only=True)
+    last_login = serializers.DateTimeField(read_only=True, allow_null=True)
     driver_profile   = serializers.SerializerMethodField()
+    
 
     class Meta:
         model = User
@@ -251,14 +253,28 @@ class UserCreateWithVehicleSerializer(serializers.ModelSerializer):
                 pass
 
         return instance
+class SchoolSerializer(serializers.ModelSerializer):
+    # ✅ source pointe vers l'annotation renommée
+    department_count = serializers.IntegerField(source='dept_count', read_only=True)
 
+    class Meta:
+        model  = School
+        fields = ['id', 'name', 'code', 'description', 'color', 'icon',
+                  'department_count', 'created_at']
+        read_only_fields = ['id', 'created_at', 'department_count']
 class DepartmentSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
+    school_name  = serializers.CharField(source='school.name',  read_only=True)
+    school_code  = serializers.CharField(source='school.code',  read_only=True)
+    school_color = serializers.CharField(source='school.color', read_only=True)
+    school_icon  = serializers.CharField(source='school.icon',  read_only=True)
 
     class Meta:
         model  = Department
-        fields = ['id', 'name', 'code', 'school', 'description', 'member_count', 'created_at']
-        read_only_fields = ['id', 'created_at', 'member_count']
+        fields = ['id', 'name', 'code', 'school', 'school_name', 'school_code',
+                  'school_color', 'school_icon', 'description', 'member_count', 'created_at']
+        read_only_fields = ['id', 'created_at', 'member_count',
+                            'school_name', 'school_code', 'school_color', 'school_icon']
 
     def get_member_count(self, obj):
         return obj.members.filter(is_active=True).count()

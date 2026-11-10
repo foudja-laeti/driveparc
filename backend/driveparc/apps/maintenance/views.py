@@ -256,7 +256,53 @@ class BreakdownViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
         return Response(BreakdownSerializer(breakdown).data)
-    
+    @action(detail=True, methods=['post'], url_path='sur_place')
+    def sur_place(self, request, pk=None):
+   
+        if request.user.role not in ('ADMIN', 'GESTIONNAIRE', 'TECHNICIEN'):
+            return Response({'detail': 'Non autorisé.'}, status=403)
+
+        breakdown = self.get_object()
+
+        if breakdown.status not in ('EN_DIAGNOSTIC', 'SIGNALE'):
+            return Response(
+                {'detail': f"Impossible : statut actuel '{breakdown.status}' ne permet pas cette action."},
+                status=400
+            )
+
+        notes = request.data.get('notes', '')
+        diagnosis = request.data.get('diagnosis', '')
+
+        breakdown.status = 'EN_REPARATION'
+        if diagnosis:
+            breakdown.diagnosis = diagnosis
+        if notes:
+            breakdown.notes = notes
+
+        breakdown.vehicle.mark_as_in_maintenance()
+        breakdown.vehicle.save()
+        breakdown.save()
+
+        # Notifier le gestionnaire
+        try:
+            from apps.notifications.models import Notification
+            from apps.users.models import User
+            gestionnaires = User.objects.filter(role__in=['GESTIONNAIRE', 'ADMIN'])
+            for g in gestionnaires:
+                Notification.objects.create(
+                    recipient=g,
+                    title=f"🔧 Réparation sur place — {breakdown.vehicle}",
+                    message=(
+                        f"La panne '{breakdown.title}' va être réparée sur place. "
+                        f"Technicien : {breakdown.assigned_technician.get_full_name() if breakdown.assigned_technician else 'Non assigné'}."
+                    ),
+                    type='INFO',
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Notification sur_place failed: {e}")
+
+        return Response(BreakdownSerializer(breakdown).data)
     @action(detail=True, methods=['post'], url_path='transferer')
     def transferer(self, request, pk=None):
         

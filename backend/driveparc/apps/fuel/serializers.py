@@ -60,9 +60,11 @@ class FuelTransactionSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'total_amount',
-            'validated_by', 'status', 'driver',
-            'card',   # ← card devient read_only, assigné dans perform_create
+            'validated_by', 'status', 'driver', 'card',
         ]
+        extra_kwargs = {
+            'reservation': {'required': False, 'allow_null': True},  # ← ajoute ça
+        }
 
     def get_vehicle_name(self, obj):
         v = obj.card.vehicle
@@ -85,14 +87,7 @@ class FuelTransactionSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.receipt_photo.url)
         return None
 
-    def validate(self, data):
-        if data.get('transaction_type') == 'MISSION' and not data.get('reservation'):
-            raise serializers.ValidationError(
-                {'reservation': 'La réservation est obligatoire pour une mission.'}
-            )
-        # ← supprime tout le bloc de vérification de carte/chauffeur
-        # cette logique va dans perform_create côté view
-        return data
+   
     def get_card_number(self, obj):
         if obj.card:
             n = obj.card.card_number.replace(' ', '')
@@ -106,7 +101,6 @@ class FuelTransactionSerializer(serializers.ModelSerializer):
                 {'reservation': 'La réservation est obligatoire pour une mission.'}
             )
         return data
-
 
 class MonthlyFuelAllocationSerializer(serializers.ModelSerializer):
     card_info    = FuelCardSerializer(source='card', read_only=True)

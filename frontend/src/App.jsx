@@ -6,7 +6,7 @@ import DashboardGestionnaire from "./pages/dashboard/DashboardGestionnaire";
 import DashboardPersonnel from "./pages/dashboard/DashboardPersonnel";
 import DashboardChauffeur from "./pages/dashboard/DashBoardChauffeur";
 import DashboardTechnicien from "./pages/dashboard/DashboardTechnicien";
-
+import DashboardAdmin from "./pages/dashboard/DashboardAdmin";
 function App() {
   const isOAuth = window.location.pathname === "/oauth-callback";
   const [phase, setPhase] = useState(isOAuth ? "oauth" : "splash");
@@ -52,7 +52,8 @@ function App() {
 
   const role = userData?.role || localStorage.getItem("user_role") || "GESTIONNAIRE";
 
-  if (role === "GESTIONNAIRE" || role === "ADMIN") return <DashboardGestionnaire onLogout={handleLogout} />;
+  if (role === "GESTIONNAIRE" ) return <DashboardGestionnaire onLogout={handleLogout} />;
+  if (role === "ADMIN")  return <DashboardAdmin onLogout={handleLogout} />;
   if (role === "TECHNICIEN")  return <DashboardTechnicien onLogout={handleLogout} />;
   if (role === "PERSONNEL")   return <DashboardPersonnel  onLogout={handleLogout} />;
   if (role === "CHAUFFEUR")   return <DashboardChauffeur  onLogout={handleLogout} />;

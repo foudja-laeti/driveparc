@@ -181,7 +181,7 @@ const CSS = `
     line-height: 1;
   }
   .dp-drive { color: #212224; }
-  .dp-parc  { color: #1a8a4a; }
+  .dp-parc  { color: #1a5d3b; }
 
   /* Badge IUC */
   .dp-iuc {

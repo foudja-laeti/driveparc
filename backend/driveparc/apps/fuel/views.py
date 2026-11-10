@@ -102,8 +102,8 @@ class FuelCardViewSet(viewsets.ModelViewSet):
         )
 
         # Consommation validée du mois
-        start, end = month_range(year, month)
-
+        start, end = self.month_range(year, month)
+        pending = FuelTransaction.objects.filter(status='EN_ATTENTE').count()
         consumed = FuelTransaction.objects.filter(
             status='VALIDE',
             transaction_date__gte=start,
@@ -158,9 +158,20 @@ class FuelCardViewSet(viewsets.ModelViewSet):
                         status=201 if created else 200)
     # Ajoute cet helper en haut de views.py, après les imports
 
+    @action(detail=True, methods=['get'], url_path='recharges')
+    def recharges(self, request, pk=None):
+        """GET /api/v1/fuel/cards/{id}/recharges/ — historique des rechargements."""
+        card = self.get_object()
+        allocs = MonthlyFuelAllocation.objects.filter(card=card).order_by('-year', '-month')
+        return Response(MonthlyFuelAllocationSerializer(allocs, many=True).data)
 
+    @staticmethod
     def month_range(year, month):
         """Retourne (start, end) en datetime aware pour le mois donné."""
+        import calendar
+        from datetime import datetime
+        import pytz
+        
         tz = pytz.timezone('Africa/Douala')
         start = tz.localize(datetime(year, month, 1, 0, 0, 0))
         last_day = calendar.monthrange(year, month)[1]
@@ -195,9 +206,17 @@ class FuelTransactionViewSet(viewsets.ModelViewSet):
         user = request.user
         transaction_type = request.data.get('transaction_type', 'RAMASSAGE')
         reservation_id   = request.data.get('reservation')
+        card_id_explicit = request.data.get('card_id')  # ← QR scan
 
         # ── Déterminer la carte ──────────────────────────────────────────────
-        if transaction_type == 'MISSION' and reservation_id:
+        if card_id_explicit:
+            # Carte fournie explicitement via QR scan
+            try:
+                card = FuelCard.objects.get(id=card_id_explicit, is_active=True)
+            except FuelCard.DoesNotExist:
+                return Response({'detail': "Carte introuvable."}, status=400)
+
+        elif transaction_type == 'MISSION' and reservation_id:
             from apps.reservations.models import Reservation
             try:
                 reservation = Reservation.objects.select_related(
@@ -212,6 +231,7 @@ class FuelTransactionViewSet(viewsets.ModelViewSet):
                     )
             except Reservation.DoesNotExist:
                 return Response({'detail': "Réservation introuvable."}, status=400)
+
         else:
             card = FuelCard.objects.filter(vehicle__bus_driver=user).first()
             if not card:
@@ -226,7 +246,6 @@ class FuelTransactionViewSet(viewsets.ModelViewSet):
                     {'detail': "Aucune carte carburant assignée à votre véhicule."},
                     status=400
                 )
-
         # ── Anti-doublon ramassage ───────────────────────────────────────────
         if transaction_type == 'RAMASSAGE':
             today = timezone.now().date()

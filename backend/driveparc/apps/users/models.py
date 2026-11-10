@@ -49,16 +49,43 @@ SCHOOL_CHOICES = [
     ("SEAS",           "SEAS — Ingénierie anglophone"),
     ("GRADUATE_SCHOOL","IUC Graduate School"),
 ]
+# apps/users/models.py — ajouter avant Department
 
-class Department(BaseModel):
-    name   = models.CharField(max_length=150, unique=True)
-    code   = models.CharField(max_length=20, unique=True, blank=True, default="")
-    school = models.CharField(max_length=20, choices=SCHOOL_CHOICES, blank=True, default="")
+class School(BaseModel):
+    name        = models.CharField(max_length=150, unique=True)
+    code        = models.CharField(max_length=20,  unique=True)
     description = models.TextField(blank=True, null=True)
+    color       = models.CharField(max_length=20, blank=True, default="#1B5E37")
+    icon        = models.CharField(max_length=10, blank=True, default="🏫")
+
     class Meta:
-        verbose_name = _('Département')
+        verbose_name        = _('École')
+        verbose_name_plural = _('Écoles')
+        ordering            = ['name']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def department_count(self):
+        return self.departments.count()
+class Department(BaseModel):
+    name        = models.CharField(max_length=150, unique=True)
+    code        = models.CharField(max_length=20, unique=True, blank=True, default="")
+    # Remplacer l'ancien CharField school par une FK
+    school      = models.ForeignKey(
+        'School',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='departments',
+        verbose_name=_('École')
+    )
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name        = _('Département')
         verbose_name_plural = _('Départements')
-        ordering = ['name']
+        ordering            = ['name']
 
     def __str__(self):
         return self.name

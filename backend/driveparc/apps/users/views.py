@@ -9,17 +9,17 @@ from social_django.views import complete as social_complete
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import logout
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.shortcuts import redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import User, DriverProfile, TechnicianProfile
+from .models import User, DriverProfile, TechnicianProfile, School
 from .serializers import (
     UserSerializer, UserCreateSerializer, UserUpdateSerializer,
     ChangePasswordSerializer, LoginSerializer, DriverProfileSerializer,
     TechnicianProfileSerializer, UserCreateWithVehicleSerializer,
-    StaffRegistrySerializer,
+    StaffRegistrySerializer, SchoolSerializer
 )
 from core.permissions import IsAdministrator, CanManageUsers
 
@@ -43,27 +43,28 @@ class AuthViewSet(viewsets.GenericViewSet):
     
     @action(detail=False, methods=['post'])
     def login(self, request):
-        """
-        Connexion utilisateur
-        POST /api/v1/auth/login/
-        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
         user = serializer.validated_data['user']
-        refresh = RefreshToken.for_user(user)
+
+        from django.contrib.auth.models import update_last_login
+        update_last_login(None, user)
         
+        # ✅ AJOUTER — rafraîchit l'objet depuis la DB
+        # sans ça, user.last_login est encore None en mémoire
+        user.refresh_from_db()
+
+        refresh = RefreshToken.for_user(user)
         return Response({
             'success': True,
-            'message': 'Connexion réussie',
             'data': {
-                'user': UserSerializer(user).data,
+                'user': UserSerializer(user).data,  # now has last_login
                 'tokens': {
                     'refresh': str(refresh),
                     'access': str(refresh.access_token),
                 }
             }
-        }, status=status.HTTP_200_OK)
+        })
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def logout(self, request):
@@ -386,36 +387,43 @@ class StaffRegistryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(role_hint=role_hint)
         if search:
             queryset = queryset.filter(
-                models.Q(employee_id__icontains=search) |
-                models.Q(first_name__icontains=search)  |
-                models.Q(last_name__icontains=search)
+                Q(employee_id__icontains=search) |  # ✅ Q direct
+                Q(first_name__icontains=search)  |
+                Q(last_name__icontains=search)
             )
         return queryset
 
     @action(detail=False, methods=['get'], url_path='lookup')
     def lookup(self, request):
-        """Vérifier un matricule et retourner les infos associées."""
         employee_id = request.query_params.get('employee_id', '').strip()
         if not employee_id:
             return Response({'error': 'Matricule requis'}, status=400)
-
         try:
             entry = StaffRegistry.objects.get(employee_id=employee_id)
             return Response({
-                'found':        True,
-                'is_activated': entry.is_activated,
-                'employee_id':  entry.employee_id,
-                'first_name':   entry.first_name,
-                'last_name':    entry.last_name,
-                'full_name':    entry.full_name,
-                'department':   entry.department_id,
-                'department_name': entry.department.name if entry.department else '',
-                'role_hint':    entry.role_hint,
+                'found':               True,
+                'is_activated':        entry.is_activated,
+                'employee_id':         entry.employee_id,
+                'first_name':          entry.first_name,
+                'last_name':           entry.last_name,
+                'full_name':           entry.full_name,
+                'department':          entry.department_id,
+                'department_name':     entry.department.name if entry.department else '',
+                'role_hint':           entry.role_hint,
                 'personnel_type_hint': entry.personnel_type_hint,
             })
         except StaffRegistry.DoesNotExist:
             return Response({'found': False}, status=404)
 
+
+class SchoolViewSet(viewsets.ModelViewSet):
+    queryset           = School.objects.all()
+    serializer_class   = SchoolSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # ✅ Count importé directement + nom différent de la @property du modèle
+        return School.objects.annotate(dept_count=Count('departments'))
 from .models import Department
 from .serializers import DepartmentSerializer
 

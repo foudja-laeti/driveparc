@@ -1,8 +1,21 @@
 // ─── pages/carburant/TabCarburant.jsx ────────────────────────────────────────
 // Module Carburant DRIVEPARC — Partenariat BOCOM
-// Version 3.0 — Refonte complète avec corrections
+// Version 4.0 — Corrections :
+//   • Bug catégorie BUS_ORDINAIRE corrigé (détection multi-champs)
+//   • TOURISME et UTILITAIRE séparés (2 catégories distinctes)
+//   • Palette sobre : vert / rouge / orange — ZERO violet
+//   • Icônes lucide-react (import propre)
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  CreditCard, Fuel, BarChart2, Bus, Car, Truck, Briefcase,
+  CheckCircle, XCircle, Clock, AlertTriangle, Printer, Plus,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Eye, Trash2, Pencil, RotateCcw, Upload, RefreshCw,
+  TrendingUp, Users, Wallet, Activity, MapPin, Calendar,
+  FileText, Shield, Star, Info,
+} from "lucide-react";
+import QRCode from "qrcode";
 
 const API_BASE = "http://localhost:8000/api/v1/fuel";
 
@@ -30,32 +43,127 @@ async function api(path, opts = {}) {
   return json?.data ?? json;
 }
 
-// ── Palette ──────────────────────────────────────────────────────────────────
+// ── Palette stricte vert / rouge / orange ─────────────────────────────────────
 const C = {
-  green: "#1B5E37",    greenMid: "#2D7A4F",   greenLight: "#EAF4EE",  greenXLight: "#F2FAF5",
-  red: "#C0182A",      redLight: "#FDF0F1",
-  white: "#FFFFFF",    bg: "#F4F6F5",
-  border: "#E2E8E5",   text: "#1A2820",       textMid: "#4A6358",     textLight: "#8EA99A",
-  amber: "#D97706",    amberLight: "#FFFBEB",
-  blue: "#1D4ED8",     blueLight: "#EFF6FF",
-  navy: "#1E3A5F",     navyLight: "#EFF4FB",
-  orange: "#EA580C",   orangeLight: "#FFF7ED",
-  purple: "#7C3AED",   purpleLight: "#F5F3FF",
+  // Verts
+  green:       "#1B5E37",
+  greenMid:    "#2D7A4F",
+  greenLight:  "#EAF4EE",
+  greenXLight: "#F2FAF5",
+  greenLine:   "#C8E6D5",
+  // Rouges
+  red:         "#C0182A",
+  redLight:    "#FDF0F1",
+  redLine:     "#FECDD3",
+  // Oranges
+  orange:      "#EA580C",
+  orangeMid:   "#C2410C",
+  orangeLight: "#FFF7ED",
+  orangeLine:  "#FDBA74",
+  // Ambre (orange pâle, pour warnings doux)
+  amber:       "#D97706",
+  amberLight:  "#FFFBEB",
+  // Neutres
+  white:       "#FFFFFF",
+  bg:          "#F4F6F5",
+  border:      "#E2E8E4",
+  text:        "#1A2820",
+  textMid:     "#4A6358",
+  textLight:   "#8EA99A",
+  slate:       "#64748B",
+  slateLight:  "#F1F5F4",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmtMoney  = (n) => Number(n || 0).toLocaleString("fr-FR") + " FCFA";
-const fmtNum    = (n) => Number(n || 0).toLocaleString("fr-FR");
-const fmtDate   = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-const fmtDT     = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-const fmtPct    = (p) => `${(+p || 0).toFixed(1)}%`;
+const fmtMoney = (n) => Number(n || 0).toLocaleString("fr-FR") + " FCFA";
+const fmtNum   = (n) => Number(n || 0).toLocaleString("fr-FR");
+const fmtDate  = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDT    = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtPct   = (p) => `${(+p || 0).toFixed(1)}%`;
 
-const cardColor = (cat) => ({
-  BUS_SCOLAIRE:  { bg: "#1B5E37", accent: "#4ade80", label: "SCOLAIRE" },
-  BUS_ORDINAIRE: { bg: "#1D4ED8", accent: "#93c5fd", label: "TRANSPORT" },
-  UTILITAIRE:    { bg: "#374151", accent: "#9ca3af", label: "TOURISME" },
-  FONCTION:      { bg: "#6D28D9", accent: "#c4b5fd", label: "FONCTION" },
-}[cat] || { bg: "#374151", accent: "#9ca3af", label: cat });
+// ── Catégories véhicules — 5 catégories distinctes ────────────────────────────
+// BUS_SCOLAIRE  = bus affecté au ramassage scolaire
+// BUS_ORDINAIRE = bus de transport ordinaire (intercity, etc.)
+// TOURISME      = véhicule de tourisme / berline
+// UTILITAIRE    = pick-up, fourgon, camionnette
+// FONCTION      = véhicule de direction / de service
+
+const CAT_CFG = {
+  BUS_SCOLAIRE:  { label: "Bus scolaire",   icon: Bus,       quota: 185000, cardBg: "#1B5E37", cardAccent: "#4ade80", cardLabel: "SCOLAIRE"  },
+  BUS_ORDINAIRE: { label: "Bus ordinaire",  icon: Bus,       quota: 125000, cardBg: "#2D5A27", cardAccent: "#86efac", cardLabel: "TRANSPORT" },
+  TOURISME:      { label: "Tourisme",       icon: Car,       quota: 100000, cardBg: "#374151", cardAccent: "#9ca3af", cardLabel: "TOURISME"  },
+  UTILITAIRE:    { label: "Utilitaire",     icon: Truck,     quota: 100000, cardBg: "#1e3a2f", cardAccent: "#6ee7b7", cardLabel: "UTILITAIRE"},
+  FONCTION:      { label: "Véh. fonction",  icon: Briefcase, quota: 150000, cardBg: "#7c2d12", cardAccent: "#fdba74", cardLabel: "FONCTION"  },
+};
+
+const QUOTAS = Object.fromEntries(Object.entries(CAT_CFG).map(([k, v]) => [k, v.quota]));
+const MOIS   = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
+// ── Détection automatique de catégorie à partir d'un véhicule API ─────────────
+// Prend en compte tous les champs possibles renvoyés par le backend
+function detectCategory(vehicle) {
+  if (!vehicle) return "TOURISME";
+
+  const type     = (vehicle.vehicle_type     || "").toUpperCase();
+  const assign   = (vehicle.assignment_type  || "").toUpperCase();
+  const category = (vehicle.category         || "").toUpperCase();
+  const subtype  = (vehicle.subtype          || "").toUpperCase();
+  const usage    = (vehicle.usage            || "").toUpperCase();
+
+  // Bus scolaire — priorité maximale
+  if (
+    assign   === "BUS_SCOLAIRE"  ||
+    category === "BUS_SCOLAIRE"  ||
+    usage    === "BUS_SCOLAIRE"  ||
+    subtype  === "BUS_SCOLAIRE"
+  ) return "BUS_SCOLAIRE";
+
+  // Bus ordinaire — avant la détection générique BUS
+  if (
+    assign   === "BUS_ORDINAIRE"  ||
+    category === "BUS_ORDINAIRE"  ||
+    usage    === "BUS_ORDINAIRE"  ||
+    subtype  === "BUS_ORDINAIRE"  ||
+    type     === "BUS"            ||
+    type     === "BUS_ORDINAIRE"  ||
+    // Certains backends renvoient "BUS" dans vehicle_type sans préciser scolaire
+    (type === "BUS" && assign !== "BUS_SCOLAIRE" && category !== "BUS_SCOLAIRE")
+  ) return "BUS_ORDINAIRE";
+
+  // Véhicule de fonction
+  if (
+    assign   === "FONCTION"       ||
+    category === "FONCTION"       ||
+    usage    === "FONCTION"       ||
+    subtype  === "FONCTION"
+  ) return "FONCTION";
+
+  // Utilitaire
+  if (
+    type     === "UTILITAIRE"     ||
+    assign   === "UTILITAIRE"     ||
+    category === "UTILITAIRE"     ||
+    subtype  === "UTILITAIRE"     ||
+    type     === "TRUCK"          ||
+    type     === "VAN"            ||
+    type     === "PICKUP"
+  ) return "UTILITAIRE";
+
+  // Tourisme (défaut pour les berlines, SUV, etc.)
+  if (
+    type     === "TOURISME"       ||
+    assign   === "TOURISME"       ||
+    category === "TOURISME"       ||
+    type     === "CAR"            ||
+    type     === "SEDAN"          ||
+    type     === "SUV"
+  ) return "TOURISME";
+
+  // Si la catégorie connue est déjà une de nos 5 valeurs
+  if (CAT_CFG[category]) return category;
+
+  return "TOURISME"; // fallback
+}
 
 // ── Styles communs ────────────────────────────────────────────────────────────
 const inp = {
@@ -72,11 +180,14 @@ const btn = (color = C.green) => ({
   padding: "9px 20px", background: color, color: "#fff", border: "none",
   borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
   fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7,
+  transition: "opacity .13s",
 });
 const ghostBtn = {
   padding: "9px 16px", background: "transparent", color: C.textMid,
   border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13,
   fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+  display: "flex", alignItems: "center", gap: 6,
+  transition: "all .13s",
 };
 
 // ── Stations BOCOM ────────────────────────────────────────────────────────────
@@ -89,11 +200,8 @@ const BOCOM_STATIONS = {
   "Ngaoundéré": ["BOCOM Ngaoundéré Centre","BOCOM Ngaoundéré Gare"],
   "Maroua":     ["BOCOM Maroua Centre","BOCOM Maroua Sud"],
   "Limbe":      ["BOCOM Limbe Centre","BOCOM Limbe Beach"],
-  "Autre ville": [],
+  "Autre ville":[],
 };
-
-const QUOTAS = { BUS_SCOLAIRE: 185000, BUS_ORDINAIRE: 125000, UTILITAIRE: 100000, FONCTION: 150000 };
-const MOIS = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPOSANTS PARTAGÉS
@@ -107,21 +215,23 @@ function Toast({ msg, type, onDone }) {
   const isErr = type === "error";
   return (
     <div style={{
-      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-      background: isErr ? C.red : C.green, color: "#fff",
-      borderRadius: 12, padding: "12px 18px", fontSize: 13, fontWeight: 600,
-      display: "flex", alignItems: "center", gap: 10,
-      boxShadow: "0 8px 32px rgba(0,0,0,.25)", maxWidth: 420, animation: "slideUp .2s ease",
+      position:"fixed", bottom:24, right:24, zIndex:9999,
+      background:isErr?C.red:C.green, color:"#fff",
+      borderRadius:12, padding:"12px 18px", fontSize:13, fontWeight:600,
+      display:"flex", alignItems:"center", gap:10,
+      boxShadow:"0 8px 32px rgba(0,0,0,.25)", maxWidth:420, animation:"slideUp .2s ease",
     }}>
-      <span style={{ fontSize: 16 }}>{isErr ? "✕" : "✓"}</span>
-      <span style={{ flex: 1 }}>{msg}</span>
-      <button onClick={onDone} style={{ background: "none", border: "none", color: "rgba(255,255,255,.7)", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>
+      {isErr ? <XCircle size={16}/> : <CheckCircle size={16}/>}
+      <span style={{flex:1}}>{msg}</span>
+      <button onClick={onDone} style={{background:"none",border:"none",color:"rgba(255,255,255,.7)",cursor:"pointer",padding:0,display:"flex"}}>
+        <XCircle size={14}/>
+      </button>
     </div>
   );
 }
 
-const Spinner = ({ size = 20, color = C.green }) => (
-  <div style={{ width: size, height: size, border: `2px solid ${color}30`, borderTopColor: color, borderRadius: "50%", animation: "spin .7s linear infinite", flexShrink: 0 }} />
+const Spinner = ({ size=20, color=C.green }) => (
+  <div style={{width:size,height:size,border:`2px solid ${color}30`,borderTopColor:color,borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0}}/>
 );
 
 function ThresholdBadge({ pct }) {
@@ -129,94 +239,80 @@ function ThresholdBadge({ pct }) {
   const crit = pct >= 100;
   return (
     <span style={{
-      fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 99,
-      background: crit ? C.red : C.amber, color: "#fff",
-      animation: crit ? "pulse 1.5s ease-in-out infinite" : "none",
+      fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:99,
+      background:crit?C.red:C.amber, color:"#fff",
+      animation:crit?"pulse 1.5s ease-in-out infinite":"none",
+      display:"flex", alignItems:"center", gap:3,
     }}>
-      {crit ? "ÉPUISÉ" : "⚠ " + Math.round(pct) + "%"}
+      {crit ? <><XCircle size={9}/> ÉPUISÉ</> : <><AlertTriangle size={9}/> {Math.round(pct)}%</>}
     </span>
   );
 }
 
-function ProgressBar({ pct, height = 6 }) {
-  const p = Math.min(100, pct || 0);
-  const color = p >= 100 ? C.red : p >= 80 ? C.amber : C.green;
+function ProgressBar({ pct, height=6 }) {
+  const p = Math.min(100, pct||0);
+  const color = p>=100?C.red:p>=80?C.amber:C.green;
   return (
-    <div style={{ height, background: "#E8EDE9", borderRadius: 99, overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${p}%`, background: color, borderRadius: 99, transition: "width .6s ease" }} />
+    <div style={{height,background:"#E8EDE9",borderRadius:99,overflow:"hidden"}}>
+      <div style={{height:"100%",width:`${p}%`,background:color,borderRadius:99,transition:"width .6s ease"}}/>
     </div>
   );
 }
 
 const STATUS_CFG = {
-  EN_ATTENTE: { label: "En attente", color: C.amber, bg: C.amberLight },
-  VALIDE:     { label: "Validé",     color: C.green, bg: C.greenLight },
-  REJETE:     { label: "Rejeté",     color: C.red,   bg: C.redLight   },
+  EN_ATTENTE: { label:"En attente", color:C.amber,  bg:C.amberLight, Icon:Clock       },
+  VALIDE:     { label:"Validé",     color:C.green,  bg:C.greenLight, Icon:CheckCircle },
+  REJETE:     { label:"Rejeté",     color:C.red,    bg:C.redLight,   Icon:XCircle     },
 };
 function StatusPill({ status }) {
-  const s = STATUS_CFG[status] || { label: status, color: C.textLight, bg: C.bg };
+  const s = STATUS_CFG[status] || { label:status, color:C.textLight, bg:C.bg, Icon:Info };
+  const { Icon } = s;
   return (
-    <span style={{ padding: "2px 10px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color, display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.color }} />
-      {s.label}
+    <span style={{padding:"2px 10px",borderRadius:99,fontSize:10,fontWeight:700,background:s.bg,color:s.color,display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+      <Icon size={9}/> {s.label}
     </span>
   );
 }
 
-// ── Champ avec erreur ─────────────────────────────────────────────────────────
 function FieldError({ error }) {
   if (!error) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, fontSize: 11, color: C.red, fontWeight: 600 }}>
-      <span>⚠</span> {error}
+    <div style={{display:"flex",alignItems:"center",gap:4,marginTop:4,fontSize:11,color:C.red,fontWeight:600}}>
+      <AlertTriangle size={11}/> {error}
     </div>
   );
 }
 
-// ── Viewer de reçu (modal interne) ────────────────────────────────────────────
 function ModalReceiptViewer({ url, onClose }) {
   const isImage = url && /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
   const isPdf   = url && /\.pdf(\?.*)?$/i.test(url);
-
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 2000,
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }} onClick={onClose}>
-      <div style={{
-        background: C.white, borderRadius: 16, overflow: "hidden",
-        boxShadow: "0 24px 80px rgba(0,0,0,.4)",
-        width: isImage ? "auto" : "80vw",
-        maxWidth: "92vw", maxHeight: "92vh",
-        display: "flex", flexDirection: "column",
-      }} onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div style={{
-          padding: "14px 20px", borderBottom: `1px solid ${C.border}`,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          background: C.bg, flexShrink: 0,
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>🧾 Reçu BOCOM</div>
-          <div style={{ display: "flex", gap: 8 }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:C.white,borderRadius:16,overflow:"hidden",boxShadow:"0 24px 80px rgba(0,0,0,.4)",width:isImage?"auto":"80vw",maxWidth:"92vw",maxHeight:"92vh",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.bg,flexShrink:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,display:"flex",alignItems:"center",gap:7}}>
+            <FileText size={15} color={C.green}/> Reçu BOCOM
+          </div>
+          <div style={{display:"flex",gap:8}}>
             <a href={url} download target="_blank" rel="noreferrer"
-              style={{ ...ghostBtn, fontSize: 11, padding: "5px 12px", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
-              ⬇ Télécharger
+              style={{...ghostBtn,fontSize:11,padding:"5px 12px",textDecoration:"none"}}>
+              <Upload size={12}/> Télécharger
             </a>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: C.textLight, lineHeight: 1 }}>✕</button>
+            <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.textLight,display:"flex"}}>
+              <XCircle size={20}/>
+            </button>
           </div>
         </div>
-
-        {/* Contenu */}
-        <div style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, minHeight: 300 }}>
+        <div style={{flex:1,overflow:"auto",display:"flex",alignItems:"center",justifyContent:"center",padding:20,minHeight:300}}>
           {isImage ? (
-            <img src={url} alt="Reçu" style={{ maxWidth: "75vw", maxHeight: "75vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 4px 20px rgba(0,0,0,.15)" }} />
+            <img src={url} alt="Reçu" style={{maxWidth:"75vw",maxHeight:"75vh",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,.15)"}}/>
           ) : isPdf ? (
-            <iframe src={url} title="Reçu PDF" style={{ width: "76vw", height: "76vh", border: "none", borderRadius: 8 }} />
+            <iframe src={url} title="Reçu PDF" style={{width:"76vw",height:"76vh",border:"none",borderRadius:8}}/>
           ) : (
-            <div style={{ textAlign: "center", color: C.textLight }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>📄</div>
-              <div style={{ fontSize: 13 }}>Aperçu non disponible pour ce format.</div>
-              <a href={url} target="_blank" rel="noreferrer" style={{ color: C.blue, fontSize: 12, marginTop: 8, display: "block" }}>Ouvrir dans un nouvel onglet</a>
+            <div style={{textAlign:"center",color:C.textLight}}>
+              <FileText size={48} color={C.textLight} style={{marginBottom:12}}/>
+              <div style={{fontSize:13}}>Aperçu non disponible.</div>
+              <a href={url} target="_blank" rel="noreferrer" style={{color:C.green,fontSize:12,marginTop:8,display:"block"}}>Ouvrir dans un nouvel onglet</a>
             </div>
           )}
         </div>
@@ -225,23 +321,20 @@ function ModalReceiptViewer({ url, onClose }) {
   );
 }
 
-// ── Confirmation suppression ──────────────────────────────────────────────────
 function ModalConfirmDelete({ label, onClose, onConfirm, loading }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: C.white, borderRadius: 14, padding: 26, width: 420, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-        <div style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>🗑️</div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, textAlign: "center", marginBottom: 8 }}>Supprimer cette carte ?</div>
-        <div style={{ fontSize: 12, color: C.textLight, textAlign: "center", marginBottom: 20, lineHeight: 1.6 }}>
-          La carte <strong style={{ color: C.text }}>{label}</strong> sera définitivement supprimée.<br/>
-          Cette action est irréversible.
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:C.white,borderRadius:14,padding:26,width:420,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Trash2 size={32} color={C.red}/></div>
+        <div style={{fontSize:15,fontWeight:700,color:C.text,textAlign:"center",marginBottom:8}}>Supprimer cette carte ?</div>
+        <div style={{fontSize:12,color:C.textLight,textAlign:"center",marginBottom:20,lineHeight:1.6}}>
+          La carte <strong style={{color:C.text}}>{label}</strong> sera définitivement supprimée.<br/>Cette action est irréversible.
         </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={ghostBtn}>Annuler</button>
-          <button onClick={onConfirm} disabled={loading}
-            style={{ ...btn(C.red), opacity: loading ? 0.6 : 1 }}>
-            {loading ? <Spinner size={14} color="#fff" /> : null}
-            {loading ? "Suppression…" : "Supprimer définitivement"}
+          <button onClick={onConfirm} disabled={loading} style={{...btn(C.red),opacity:loading?.6:1}}>
+            {loading?<Spinner size={14} color="#fff"/>:null}
+            {loading?"Suppression…":"Supprimer définitivement"}
           </button>
         </div>
       </div>
@@ -249,115 +342,231 @@ function ModalConfirmDelete({ label, onClose, onConfirm, loading }) {
   );
 }
 
-// ── Modal Rejet ───────────────────────────────────────────────────────────────
 function ModalRejet({ onClose, onConfirm, loading }) {
   const [reason, setReason] = useState("");
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 460, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>Motif du rejet</div>
-        <div style={{ fontSize: 12, color: C.textLight, marginBottom: 16 }}>Ce motif sera visible par le chauffeur dans son historique.</div>
-        <textarea autoFocus value={reason} onChange={e => setReason(e.target.value)}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:C.white,borderRadius:14,padding:24,width:460,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+        <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Motif du rejet</div>
+        <div style={{fontSize:12,color:C.textLight,marginBottom:16}}>Ce motif sera visible par le chauffeur.</div>
+        <textarea autoFocus value={reason} onChange={e=>setReason(e.target.value)}
           placeholder="Expliquez pourquoi cette saisie est rejetée…" rows={4}
-          style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
-        {!reason.trim() && reason.length > 0 && <FieldError error="Le motif ne peut pas être vide." />}
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+          style={{...inp,resize:"vertical",lineHeight:1.5}}/>
+        {!reason.trim()&&reason.length>0&&<FieldError error="Le motif ne peut pas être vide."/>}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:14}}>
           <button onClick={onClose} style={ghostBtn}>Annuler</button>
-          <button onClick={() => reason.trim() && onConfirm(reason.trim())} disabled={loading || !reason.trim()}
-            style={{ ...btn(C.red), opacity: loading || !reason.trim() ? 0.6 : 1 }}>
-            {loading ? <Spinner size={14} color="#fff" /> : null}
-            {loading ? "Envoi…" : "Confirmer le rejet"}
+          <button onClick={()=>reason.trim()&&onConfirm(reason.trim())} disabled={loading||!reason.trim()}
+            style={{...btn(C.red),opacity:loading||!reason.trim()?.6:1}}>
+            {loading?<Spinner size={14} color="#fff"/>:null}
+            {loading?"Envoi…":"Confirmer le rejet"}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
+function QRCodeDisplay({ card, onClose }) {
+  console.log("card.id reçu :", card.id); 
+  const canvasRef = useRef();
+  const [ready, setReady] = useState(false);
+ 
+  // Payload minimal encodé dans le QR :
+  // JSON { card_id, vehicle_reg, category }
+  // Le scan renvoie juste l'ID de carte → le backend fait le reste
+  const payload = JSON.stringify({
+    card_id:      card.id,
+    vehicle_reg:  card.vehicle_info?.registration_number || "",
+    category:     card.category || "TOURISME",
+  });
+ 
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, payload, {
+      width:            240,
+      margin:           2,
+      color: { dark: "#1B5E37", light: "#FFFFFF" },
+      errorCorrectionLevel: "M",
+    })
+      .then(() => setReady(true))
+      .catch(console.error);
+  }, [payload]);
+ 
+  const handleDownload = () => {
+    const link = document.createElement("a");
+    link.download = `BOCOM_QR_${card.vehicle_info?.registration_number || card.id}.png`;
+    link.href = canvasRef.current.toDataURL("image/png");
+    link.click();
+  };
+ 
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,.6)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 1500,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: C.white, borderRadius: 20, padding: 28,
+          width: 320, boxShadow: "0 24px 60px rgba(0,0,0,.3)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* En-tête */}
+        <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>QR Code BOCOM</div>
+            <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>
+              {card.vehicle_info?.make} {card.vehicle_info?.model} · {card.vehicle_info?.registration_number}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight, display: "flex" }}>
+            <XCircle size={20} />
+          </button>
+        </div>
+ 
+        {/* Canvas QR */}
+        <div
+          style={{
+            padding: 12, background: "#fff",
+            borderRadius: 12, border: `2px solid ${C.green}30`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            minHeight: 264,
+          }}
+        >
+          {!ready && <Spinner size={28} />}
+          <canvas ref={canvasRef} style={{ display: ready ? "block" : "none", borderRadius: 4 }} />
+        </div>
+ 
+        {/* Infos carte sous le QR */}
+        <div
+          style={{
+            width: "100%", background: C.greenLight, borderRadius: 10,
+            padding: "10px 14px", display: "flex", justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 10, color: C.textMid, textTransform: "uppercase", letterSpacing: "1px" }}>Catégorie</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>{CAT_CFG[card.category]?.label || card.category}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 10, color: C.textMid, textTransform: "uppercase", letterSpacing: "1px" }}>Quota</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>{fmtMoney(card.monthly_quota)}</div>
+          </div>
+        </div>
+ 
+        {/* Notice */}
+        <div style={{ fontSize: 11, color: C.textLight, textAlign: "center", lineHeight: 1.5 }}>
+          Imprime ce QR et colle-le au dos de la carte physique BOCOM.<br />
+          Le chauffeur le scannera pour saisir sa consommation en 10 secondes.
+        </div>
+ 
+        {/* Boutons */}
+        <div style={{ display: "flex", gap: 10, width: "100%" }}>
+          <button onClick={onClose} style={{ ...ghostBtn, flex: 1, justifyContent: "center" }}>Fermer</button>
+          <button
+            onClick={handleDownload}
+            disabled={!ready}
+            style={{ ...btn(C.green), flex: 1, justifyContent: "center", opacity: ready ? 1 : 0.5 }}
+          >
+            <Upload size={14} /> Télécharger PNG
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+ 
 // ════════════════════════════════════════════════════════════════════════════
 // CARTE MAGNÉTIQUE VISUELLE
 // ════════════════════════════════════════════════════════════════════════════
 function CardVisual({ card, selected, onClick }) {
   const [flipped, setFlipped] = useState(false);
-  const col = cardColor(card.category);
-  const pct = Math.min(100, card.usage_pct || 0);
-  const balColor = pct >= 100 ? "#f87171" : pct >= 80 ? "#fbbf24" : col.accent;
+  const cfg = CAT_CFG[card.category] || CAT_CFG.TOURISME;
+  const pct = Math.min(100, card.usage_pct||0);
+  const balColor = pct>=100?"#f87171":pct>=80?"#fbbf24":cfg.cardAccent;
+  const CatIcon = cfg.icon;
 
   return (
-    <div onClick={onClick} style={{ perspective: 1000, cursor: "pointer", minWidth: 270 }}>
-      <div style={{
-        position: "relative", transformStyle: "preserve-3d", transition: "transform .5s ease",
-        transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)", height: 180,
-      }}>
+    <div onClick={onClick} style={{perspective:1000,cursor:"pointer",minWidth:270}}>
+      <div style={{position:"relative",transformStyle:"preserve-3d",transition:"transform .5s ease",transform:flipped?"rotateY(180deg)":"rotateY(0deg)",height:180}}>
         {/* RECTO */}
         <div style={{
-          position: "absolute", inset: 0, backfaceVisibility: "hidden",
-          background: `linear-gradient(135deg, ${col.bg} 0%, ${col.bg}cc 100%)`,
-          borderRadius: 16, padding: "18px 20px",
-          border: `2px solid ${selected ? col.accent : "transparent"}`,
-          boxShadow: selected ? `0 8px 28px ${col.bg}50` : "0 2px 10px rgba(0,0,0,.15)",
-          overflow: "hidden",
+          position:"absolute",inset:0,backfaceVisibility:"hidden",
+          background:`linear-gradient(135deg, ${cfg.cardBg} 0%, ${cfg.cardBg}cc 100%)`,
+          borderRadius:16,padding:"18px 20px",
+          border:`2px solid ${selected?cfg.cardAccent:"transparent"}`,
+          boxShadow:selected?`0 8px 28px ${cfg.cardBg}50`:"0 2px 10px rgba(0,0,0,.15)",
+          overflow:"hidden",
         }}>
-          <div style={{ position: "absolute", top: -30, right: -30, width: 110, height: 110, borderRadius: "50%", background: "rgba(255,255,255,.06)" }} />
-          <div style={{ position: "absolute", bottom: -20, left: -20, width: 80, height: 80, borderRadius: "50%", background: "rgba(255,255,255,.04)" }} />
+          <div style={{position:"absolute",top:-30,right:-30,width:110,height:110,borderRadius:"50%",background:"rgba(255,255,255,.06)"}}/>
+          <div style={{position:"absolute",bottom:-20,left:-20,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,.04)"}}/>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "1px" }}>BOCOM</div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <ThresholdBadge pct={pct} />
-              <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(255,255,255,.15)", color: "rgba(255,255,255,.9)", padding: "3px 8px", borderRadius: 99, letterSpacing: "1.5px" }}>{col.label}</span>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"1px"}}>BOCOM</div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <ThresholdBadge pct={pct}/>
+              <span style={{fontSize:9,fontWeight:800,background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",padding:"3px 8px",borderRadius:99,letterSpacing:"1.5px",display:"flex",alignItems:"center",gap:4}}>
+                <CatIcon size={8}/> {cfg.cardLabel}
+              </span>
             </div>
           </div>
-          <div style={{ width: 36, height: 26, borderRadius: 5, background: "linear-gradient(135deg,#f59e0b,#d97706)", marginBottom: 12 }} />
-          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.9)", letterSpacing: "2.5px", marginBottom: 12, fontFamily: "'Courier New',monospace" }}>
-            {card.card_number_masked || card.card_number}
+          <div style={{width:36,height:26,borderRadius:5,background:"linear-gradient(135deg,#f59e0b,#d97706)",marginBottom:12}}/>
+          <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.9)",letterSpacing:"2.5px",marginBottom:12,fontFamily:"'Courier New',monospace"}}>
+            {card.card_number_masked||card.card_number}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
             <div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,.5)", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 2 }}>Véhicule</div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#fff" }}>{card.vehicle_info?.make} {card.vehicle_info?.model}</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)", letterSpacing: "1px" }}>{card.vehicle_info?.registration_number}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.5)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:2}}>Véhicule</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{card.vehicle_info?.make} {card.vehicle_info?.model}</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:"1px"}}>{card.vehicle_info?.registration_number}</div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,.5)", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 2 }}>Solde</div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: balColor }}>{fmtNum(card.current_balance)} F</div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.5)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:2}}>Solde</div>
+              <div style={{fontSize:15,fontWeight:900,color:balColor}}>{fmtNum(card.current_balance)} F</div>
             </div>
           </div>
-          <div style={{ marginTop: 10, height: 3, background: "rgba(255,255,255,.15)", borderRadius: 99, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${pct}%`, background: balColor, borderRadius: 99, transition: "width .5s" }} />
+          <div style={{marginTop:10,height:3,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${pct}%`,background:balColor,borderRadius:99,transition:"width .5s"}}/>
           </div>
-          <button onClick={e => { e.stopPropagation(); setFlipped(true); }}
-            style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(255,255,255,.15)", border: "none", color: "rgba(255,255,255,.7)", borderRadius: 6, padding: "3px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>
+          <button onClick={e=>{e.stopPropagation();setFlipped(true);}}
+            style={{position:"absolute",bottom:12,right:12,background:"rgba(255,255,255,.15)",border:"none",color:"rgba(255,255,255,.7)",borderRadius:6,padding:"3px 8px",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
             ↩ Verso
           </button>
         </div>
 
         {/* VERSO */}
         <div style={{
-          position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)",
-          background: `linear-gradient(135deg, ${col.bg}ee 0%, ${col.bg}aa 100%)`,
-          borderRadius: 16, padding: "18px 20px", overflow: "hidden",
+          position:"absolute",inset:0,backfaceVisibility:"hidden",transform:"rotateY(180deg)",
+          background:`linear-gradient(135deg, ${cfg.cardBg}ee 0%, ${cfg.cardBg}aa 100%)`,
+          borderRadius:16,padding:"18px 20px",overflow:"hidden",
         }}>
-          <div style={{ height: 28, background: "#1a1a1a", marginBottom: 14, borderRadius: 4 }} />
-          <div style={{ background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,.5)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>Quota mensuel</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>{fmtMoney(card.monthly_quota)}</div>
+          <div style={{height:28,background:"#1a1a1a",marginBottom:14,borderRadius:4}}/>
+          <div style={{background:"rgba(255,255,255,.1)",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Quota mensuel</div>
+            <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{fmtMoney(card.monthly_quota)}</div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 8, padding: "8px 10px" }}>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>Consommé</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24" }}>{fmtMoney(card.monthly_quota - (card.current_balance || 0))}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:"rgba(255,255,255,.08)",borderRadius:8,padding:"8px 10px"}}>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginBottom:2}}>Consommé</div>
+              <div style={{fontSize:12,fontWeight:700,color:"#fbbf24"}}>{fmtMoney(card.monthly_quota-(card.current_balance||0))}</div>
             </div>
-            <div style={{ background: "rgba(255,255,255,.08)", borderRadius: 8, padding: "8px 10px" }}>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,.4)", marginBottom: 2 }}>Utilisation</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{fmtPct(pct)}</div>
+            <div style={{background:"rgba(255,255,255,.08)",borderRadius:8,padding:"8px 10px"}}>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginBottom:2}}>Utilisation</div>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff"}}>{fmtPct(pct)}</div>
             </div>
           </div>
-          {card.vehicle_info?.assigned_driver && (
-            <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,.7)" }}>👤 {card.vehicle_info.assigned_driver}</div>
+          {card.vehicle_info?.assigned_driver&&(
+            <div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,.7)",display:"flex",alignItems:"center",gap:5}}>
+              <Users size={11}/> {card.vehicle_info.assigned_driver}
+            </div>
           )}
-          <button onClick={e => { e.stopPropagation(); setFlipped(false); }}
-            style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(255,255,255,.15)", border: "none", color: "rgba(255,255,255,.7)", borderRadius: 6, padding: "3px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>
+          <button onClick={e=>{e.stopPropagation();setFlipped(false);}}
+            style={{position:"absolute",bottom:12,right:12,background:"rgba(255,255,255,.15)",border:"none",color:"rgba(255,255,255,.7)",borderRadius:6,padding:"3px 8px",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
             ↪ Recto
           </button>
         </div>
@@ -367,7 +576,7 @@ function CardVisual({ card, selected, onClick }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// MODAL CRÉER / MODIFIER CARTE — réseau BOCOM uniquement, validation stricte
+// MODAL CRÉER / MODIFIER CARTE
 // ════════════════════════════════════════════════════════════════════════════
 function ModalCarteForm({ editCard, onClose, onSuccess, showToast }) {
   const isEdit = !!editCard;
@@ -379,195 +588,186 @@ function ModalCarteForm({ editCard, onClose, onSuccess, showToast }) {
     category:     editCard?.category || "BUS_SCOLAIRE",
     notes:        editCard?.notes || "",
   });
-  const [saving, setSaving]   = useState(false);
-  const [errors, setErrors]   = useState({});
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: "" })); };
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const set = (k, v) => { setForm(f=>({...f,[k]:v})); setErrors(e=>({...e,[k]:""})); };
 
-  useEffect(() => {
-    fetch("http://localhost:8000/api/v1/vehicles/", { headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } })
-      .then(r => r.json())
-      .then(d => setVehicles(Array.isArray(d) ? d : d?.results ?? []))
-      .catch(() => setVehicles([]));
-  }, []);
+  useEffect(()=>{
+    fetch("http://localhost:8000/api/v1/vehicles/",{headers:{Authorization:`Bearer ${localStorage.getItem("access_token")}`}})
+      .then(r=>r.json())
+      .then(d=>setVehicles(Array.isArray(d)?d:d?.results??[]))
+      .catch(()=>setVehicles([]));
+  },[]);
 
-  // Validation du numéro de carte BOCOM : exactement 16-19 chiffres, pas d'espaces
-  const validateCardNumber = (n) => {
+  const validateCardNumber=(n)=>{
     if (!n.trim()) return "Le numéro de carte est obligatoire.";
-    if (!/^\d+$/.test(n.trim())) return "Le numéro de carte ne doit contenir que des chiffres (sans espaces ni tirets).";
-    if (n.trim().length !== 19) return `Numéro invalide — ${n.trim().length} chiffre(s) saisi(s) sur 19 requis.`;
+    if (!/^\d+$/.test(n.trim())) return "Chiffres uniquement (sans espaces ni tirets).";
+    if (n.trim().length!==19) return `Numéro invalide — ${n.trim().length}/19 chiffres saisis.`;
     return "";
   };
-
-  const validate = () => {
-    const e = {};
-    if (!form.vehicle)          e.vehicle     = "Veuillez sélectionner un véhicule.";
-    const cardErr = validateCardNumber(form.card_number);
-    if (cardErr)                e.card_number = cardErr;
-    if (!form.category)         e.category    = "Veuillez choisir une catégorie.";
+  const validate=()=>{
+    const e={};
+    if (!form.vehicle)       e.vehicle    ="Veuillez sélectionner un véhicule.";
+    const ce=validateCardNumber(form.card_number);
+    if (ce)                  e.card_number=ce;
+    if (!form.category)      e.category   ="Veuillez choisir une catégorie.";
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return Object.keys(e).length===0;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit=async()=>{
     if (!validate()) return;
     setSaving(true);
     try {
-      const tok = localStorage.getItem("access_token");
-      const body = { ...form, card_number: form.card_number.trim() };
-      const url    = isEdit ? `${API_BASE}/cards/${editCard.id}/` : `${API_BASE}/cards/`;
-      const method = isEdit ? "PUT" : "POST";
-      const res  = await fetch(url, {
-        method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        // Mapper les erreurs DRF vers les champs
-        const fieldErrs = {};
-        if (json?.vehicle)     fieldErrs.vehicle     = json.vehicle[0];
-        if (json?.card_number) fieldErrs.card_number = json.card_number[0];
-        if (json?.category)    fieldErrs.category    = json.category[0];
-        if (Object.keys(fieldErrs).length) { setErrors(fieldErrs); setSaving(false); return; }
-        throw new Error(json?.detail || json?.message || Object.values(json).flat()[0] || "Erreur");
+      const tok=localStorage.getItem("access_token");
+      const body={...form,card_number:form.card_number.trim()};
+      const url=isEdit?`${API_BASE}/cards/${editCard.id}/`:`${API_BASE}/cards/`;
+      const res=await fetch(url,{method:isEdit?"PUT":"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${tok}`},body:JSON.stringify(body)});
+      const json=await res.json();
+      if (!res.ok){
+        const fe={};
+        if (json?.vehicle)     fe.vehicle    =json.vehicle[0];
+        if (json?.card_number) fe.card_number=json.card_number[0];
+        if (json?.category)    fe.category   =json.category[0];
+        if (Object.keys(fe).length){setErrors(fe);setSaving(false);return;}
+        throw new Error(json?.detail||json?.message||Object.values(json).flat()[0]||"Erreur");
       }
-      showToast(isEdit ? "Carte mise à jour ✓" : "Carte créée avec succès ✓");
+      showToast(isEdit?"Carte mise à jour ✓":"Carte créée avec succès ✓");
       onSuccess();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setSaving(false); }
+    } catch(e){showToast(e.message,"error");}
+    finally{setSaving(false);}
   };
 
-  const CATS = [
-    ["BUS_SCOLAIRE",  "🚌 Bus scolaire",        185000],
-    ["BUS_ORDINAIRE", "🚌 Bus ordinaire",        125000],
-    ["UTILITAIRE",    "🚗 Utilitaire / Tourisme", 100000],
-    ["FONCTION",      "🎖️ Véhicule de fonction", 150000],
-  ];
-
-  const cardNumRaw = form.card_number.replace(/\D/g, "");
-  const cardNumDisplay = cardNumRaw.replace(/(.{4})/g, "$1 ").trim();
+  // 5 catégories avec leur quota
+  const CATS = Object.entries(CAT_CFG).map(([val,cfg])=>[val, cfg.label, cfg.quota, cfg.icon]);
+  const cardNumRaw=form.card_number.replace(/\D/g,"");
+  const cardNumDisplay=cardNumRaw.replace(/(.{4})/g,"$1 ").trim();
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}>
-      <div style={{ background: C.white, borderRadius: 16, padding: 28, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100}}>
+      <div style={{background:C.white,borderRadius:16,padding:28,width:580,maxWidth:"95vw",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{isEdit ? "Modifier la carte" : "Créer une carte carburant"}</div>
-            <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>Partenariat BOCOM — réseau exclusif</div>
+            <div style={{fontSize:15,fontWeight:800,color:C.text}}>{isEdit?"Modifier la carte":"Créer une carte carburant"}</div>
+            <div style={{fontSize:11,color:C.textLight,marginTop:2}}>Partenariat BOCOM — réseau exclusif</div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: C.textLight }}>✕</button>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.textLight,display:"flex"}}>
+            <XCircle size={20}/>
+          </button>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-
-          {/* Réseau BOCOM — non modifiable */}
+        <div style={{display:"flex",flexDirection:"column",gap:18}}>
+          {/* Réseau BOCOM */}
           <div>
             <label style={lbl}>Réseau</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.greenLight, borderRadius: 8, border: `1.5px solid ${C.green}30` }}>
-              <div style={{ width: 28, height: 28, background: C.green, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#fff", fontWeight: 800 }}>B</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",background:C.greenLight,borderRadius:8,border:`1.5px solid ${C.green}30`}}>
+              <div style={{width:28,height:28,background:C.green,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13}}>B</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.green }}>BOCOM</div>
-                <div style={{ fontSize: 10, color: C.textMid }}>Réseau partenaire exclusif DRIVEPARC</div>
+                <div style={{fontSize:13,fontWeight:700,color:C.green}}>BOCOM</div>
+                <div style={{fontSize:10,color:C.textMid}}>Réseau partenaire exclusif DRIVEPARC</div>
               </div>
-              <div style={{ marginLeft: "auto", fontSize: 10, color: C.green, fontWeight: 700, background: C.white, padding: "2px 8px", borderRadius: 99, border: `1px solid ${C.green}30` }}>✓ Partenaire officiel</div>
+              <div style={{marginLeft:"auto",fontSize:10,color:C.green,fontWeight:700,background:C.white,padding:"2px 8px",borderRadius:99,border:`1px solid ${C.green}30`,display:"flex",alignItems:"center",gap:4}}>
+                <Shield size={9}/> Partenaire officiel
+              </div>
             </div>
           </div>
 
           {/* Véhicule */}
           <div>
             <label style={lbl}>Véhicule *</label>
-            <select style={errors.vehicle ? inpErr : inp} value={form.vehicle}
-              onChange={e => {
-                const v = vehicles.find(v => String(v.id) === e.target.value);
-                set("vehicle", e.target.value);
-                if (v) {
-                  const cat = v.assignment_type === "BUS_SCOLAIRE" ? "BUS_SCOLAIRE"
-                    : v.vehicle_type === "BUS" ? "BUS_ORDINAIRE"
-                    : v.assignment_type === "FONCTION" ? "FONCTION" : "UTILITAIRE";
-                  set("category", cat);
-                }
+            <select style={errors.vehicle?inpErr:inp} value={form.vehicle}
+              onChange={e=>{
+                const v=vehicles.find(v=>String(v.id)===e.target.value);
+                set("vehicle",e.target.value);
+                if (v) set("category", detectCategory(v));
               }}>
               <option value="">— Sélectionner un véhicule —</option>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.make} {v.model} · {v.registration_number}</option>)}
+              {vehicles.map(v=><option key={v.id} value={v.id}>{v.make} {v.model} · {v.registration_number}</option>)}
             </select>
-            <FieldError error={errors.vehicle} />
-          </div>
-
-          {/* Numéro de carte */}
-          <div>
-            <label style={lbl}>Numéro de carte BOCOM *</label>
-            <input
-              style={errors.card_number ? inpErr : inp}
-              value={form.card_number}
-              onChange={e => set("card_number", e.target.value.replace(/\D/g, "").slice(0, 19))}
-              placeholder="Ex : 5288123412341234"
-              maxLength={19}
-              inputMode="numeric"
-            />
-            {/* Prévisualisation formatée */}
-            {cardNumRaw.length >= 4 && !errors.card_number && (
-              <div style={{ marginTop: 5, fontSize: 12, color: C.green, fontFamily: "'Courier New',monospace", fontWeight: 700, letterSpacing: "2px" }}>
-                ✓ {cardNumDisplay}
-                <span style={{ fontSize: 10, color: C.textLight, fontFamily: "inherit", letterSpacing: "normal", fontWeight: 400, marginLeft: 8 }}>
-                  ({cardNumRaw.length} chiffres)
-                </span>
+            <FieldError error={errors.vehicle}/>
+            {form.vehicle&&form.category&&(
+              <div style={{marginTop:4,fontSize:11,color:C.green,display:"flex",alignItems:"center",gap:4}}>
+                <CheckCircle size={11}/> Catégorie détectée : <strong>{CAT_CFG[form.category]?.label||form.category}</strong>
               </div>
             )}
-            <FieldError error={errors.card_number} />
-            <div style={{ fontSize: 10, color: C.textLight, marginTop: 3 }}>Exactement 19 chiffres — numéro figurant sur la carte physique BOCOM</div>
           </div>
 
-          {/* Catégorie */}
+          {/* Numéro carte */}
+          <div>
+            <label style={lbl}>Numéro de carte BOCOM *</label>
+            <input style={errors.card_number?inpErr:inp}
+              value={form.card_number}
+              onChange={e=>set("card_number",e.target.value.replace(/\D/g,"").slice(0,19))}
+              placeholder="Ex : 5288123412341234567"
+              maxLength={19} inputMode="numeric"/>
+            {cardNumRaw.length>=4&&!errors.card_number&&(
+              <div style={{marginTop:5,fontSize:12,color:C.green,fontFamily:"'Courier New',monospace",fontWeight:700,letterSpacing:"2px",display:"flex",alignItems:"center",gap:6}}>
+                <CheckCircle size={11} color={C.green}/> {cardNumDisplay}
+                <span style={{fontSize:10,color:C.textLight,fontFamily:"inherit",letterSpacing:"normal",fontWeight:400}}>({cardNumRaw.length} chiffres)</span>
+              </div>
+            )}
+            <FieldError error={errors.card_number}/>
+            <div style={{fontSize:10,color:C.textLight,marginTop:3}}>Exactement 19 chiffres — numéro figurant sur la carte physique BOCOM</div>
+          </div>
+
+          {/* Catégorie — 5 options */}
           <div>
             <label style={lbl}>Catégorie *</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {CATS.map(([val, label, quota]) => (
-                <button key={val} type="button" onClick={() => set("category", val)}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {CATS.map(([val,label,quota,Icon])=>(
+                <button key={val} type="button" onClick={()=>set("category",val)}
                   style={{
-                    padding: "10px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                    cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-                    border: `1.5px solid ${form.category === val ? C.green : C.border}`,
-                    background: form.category === val ? C.greenLight : C.white,
-                    color: form.category === val ? C.green : C.textMid,
-                    transition: "all .12s",
+                    padding:"10px 14px",borderRadius:8,fontSize:12,fontWeight:600,
+                    cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                    border:`1.5px solid ${form.category===val?C.green:C.border}`,
+                    background:form.category===val?C.greenLight:C.white,
+                    color:form.category===val?C.green:C.textMid,
+                    transition:"all .12s",
+                    display:"flex",alignItems:"flex-start",gap:8,
                   }}>
-                  <div style={{ fontWeight: 700 }}>{label}</div>
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>Quota : {Number(quota).toLocaleString("fr-FR")} FCFA/mois</div>
+                  <Icon size={16} style={{flexShrink:0,marginTop:2}}/>
+                  <div>
+                    <div style={{fontWeight:700}}>{label}</div>
+                    <div style={{fontSize:10,opacity:.7,marginTop:2}}>Quota : {Number(quota).toLocaleString("fr-FR")} FCFA/mois</div>
+                  </div>
                 </button>
               ))}
             </div>
-            <FieldError error={errors.category} />
+            <FieldError error={errors.category}/>
           </div>
 
-          {/* Quota calculé */}
-          <div style={{ background: C.greenLight, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: C.textMid }}>💳 Quota mensuel automatique</span>
-            <span style={{ fontSize: 15, fontWeight: 800, color: C.green }}>{(QUOTAS[form.category] || 0).toLocaleString("fr-FR")} FCFA</span>
+          {/* Quota */}
+          <div style={{background:C.greenLight,borderRadius:8,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.textMid,display:"flex",alignItems:"center",gap:6}}>
+              <Wallet size={13}/> Quota mensuel automatique
+            </span>
+            <span style={{fontSize:15,fontWeight:800,color:C.green}}>{(QUOTAS[form.category]||0).toLocaleString("fr-FR")} FCFA</span>
           </div>
 
           {/* Notes */}
           <div>
             <label style={lbl}>Notes (optionnel)</label>
-            <input style={inp} value={form.notes} onChange={e => set("notes", e.target.value)}
-              placeholder="Ex : Carte créée suite à commande BOCOM du 12/04/2026" />
+            <input style={inp} value={form.notes} onChange={e=>set("notes",e.target.value)}
+              placeholder="Ex : Carte créée suite à commande BOCOM du 12/04/2026"/>
           </div>
         </div>
 
-        {/* Résumé erreurs global */}
-        {Object.keys(errors).length > 0 && (
-          <div style={{ marginTop: 16, background: C.redLight, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "10px 14px" }}>
-            <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 4 }}>⚠ Veuillez corriger les erreurs suivantes :</div>
-            {Object.values(errors).filter(Boolean).map((e, i) => (
-              <div key={i} style={{ fontSize: 11, color: C.red, marginTop: 2 }}>• {e}</div>
+        {Object.keys(errors).length>0&&(
+          <div style={{marginTop:16,background:C.redLight,border:`1px solid ${C.red}30`,borderRadius:8,padding:"10px 14px"}}>
+            <div style={{fontSize:12,color:C.red,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",gap:5}}>
+              <AlertTriangle size={13}/> Veuillez corriger les erreurs :
+            </div>
+            {Object.values(errors).filter(Boolean).map((e,i)=>(
+              <div key={i} style={{fontSize:11,color:C.red,marginTop:2}}>• {e}</div>
             ))}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 22 }}>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:22}}>
           <button onClick={onClose} style={ghostBtn}>Annuler</button>
-          <button onClick={handleSubmit} disabled={saving}
-            style={{ ...btn(C.green), opacity: saving ? 0.7 : 1 }}>
-            {saving ? <Spinner size={14} color="#fff" /> : null}
-            {saving ? (isEdit ? "Mise à jour…" : "Création…") : (isEdit ? "✓ Enregistrer" : "Créer la carte")}
+          <button onClick={handleSubmit} disabled={saving} style={{...btn(C.green),opacity:saving?.7:1}}>
+            {saving?<Spinner size={14} color="#fff"/>:null}
+            {saving?(isEdit?"Mise à jour…":"Création…"):(isEdit?"Enregistrer":"Créer la carte")}
           </button>
         </div>
       </div>
@@ -576,103 +776,84 @@ function ModalCarteForm({ editCard, onClose, onSuccess, showToast }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STATISTIQUES — vrais graphes SVG inline
+// STATISTIQUES
 // ════════════════════════════════════════════════════════════════════════════
 function StatsView({ dashboard, cards, transactions, printPDF }) {
-  const now        = new Date();
-  const alertCards = cards.filter(c => (c.usage_pct || 0) >= 80);
+  const now = new Date();
+  const alertCards = cards.filter(c=>(c.usage_pct||0)>=80);
 
-  // ────────────────────────────────────────────────────────────────────────
-  // Calcul des métriques DIRECTEMENT depuis cards + transactions
-  // (indépendant de dashboard — toujours disponible)
-  // ────────────────────────────────────────────────────────────────────────
-  const budgetTotal    = cards.reduce((s, c) => s + (c.monthly_quota || 0), 0);
-  const consumed       = cards.reduce((s, c) => s + ((c.monthly_quota || 0) - (c.current_balance || 0)), 0);
-  const usagePct       = budgetTotal > 0 ? (consumed / budgetTotal) * 100 : 0;
-  const txValidees     = transactions.filter(t => t.status === "VALIDE");
-  const txAttente      = transactions.filter(t => t.status === "EN_ATTENTE");
-  const txRejetees     = transactions.filter(t => t.status === "REJETE");
-  const totalLitres    = transactions.reduce((s, t) => s + (parseFloat(t.quantity_liters) || 0), 0);
-  const avgTx          = txValidees.length > 0
-    ? Math.round(txValidees.reduce((s, t) => s + (parseFloat(t.total_amount) || 0), 0) / txValidees.length)
-    : 0;
+  const budgetTotal = cards.reduce((s,c)=>s+(c.monthly_quota||0),0);
+  const consumed    = cards.reduce((s,c)=>s+((c.monthly_quota||0)-(c.current_balance||0)),0);
+  const usagePct    = budgetTotal>0?(consumed/budgetTotal)*100:0;
+  const txValidees  = transactions.filter(t=>t.status==="VALIDE");
+  const txAttente   = transactions.filter(t=>t.status==="EN_ATTENTE");
+  const txRejetees  = transactions.filter(t=>t.status==="REJETE");
+  const totalLitres = transactions.reduce((s,t)=>s+(parseFloat(t.quantity_liters)||0),0);
+  const avgTx       = txValidees.length>0?Math.round(txValidees.reduce((s,t)=>s+(parseFloat(t.total_amount)||0),0)/txValidees.length):0;
 
-  // Litres & montants par type
-  const byTypeCalc = ["RAMASSAGE", "MISSION"].map(type => {
-    const sub = transactions.filter(t => t.transaction_type === type);
-    return {
-      type,
-      label: type === "RAMASSAGE" ? "Ramassage" : "Mission",
-      total: sub.reduce((s, t) => s + (parseFloat(t.total_amount) || 0), 0),
-      litres: sub.reduce((s, t) => s + (parseFloat(t.quantity_liters) || 0), 0),
-      count: sub.length,
-    };
-  }).filter(x => x.count > 0);
+  const byTypeCalc = ["RAMASSAGE","MISSION"].map(type=>{
+    const sub=transactions.filter(t=>t.transaction_type===type);
+    return {type,label:type==="RAMASSAGE"?"Ramassage":"Mission",
+      total:sub.reduce((s,t)=>s+(parseFloat(t.total_amount)||0),0),
+      litres:sub.reduce((s,t)=>s+(parseFloat(t.quantity_liters)||0),0),count:sub.length};
+  }).filter(x=>x.count>0);
 
-  // Groupes par catégorie depuis cards
-  const catColors = { BUS_SCOLAIRE: C.green, BUS_ORDINAIRE: C.blue, UTILITAIRE: C.textMid, FONCTION: C.purple };
-  const catLabels = { BUS_SCOLAIRE: "Bus scolaire", BUS_ORDINAIRE: "Bus ordinaire", UTILITAIRE: "Utilitaire", FONCTION: "Fonction" };
+  // Couleurs catégories — palette sobre
+  const catColors = {
+    BUS_SCOLAIRE:  C.green,
+    BUS_ORDINAIRE: C.greenMid,
+    TOURISME:      C.slate,
+    UTILITAIRE:    C.orange,
+    FONCTION:      C.red,
+  };
+
   const catGroups = Object.entries(
-    cards.reduce((acc, c) => {
-      const k = c.category || "AUTRE";
-      if (!acc[k]) acc[k] = { consumed: 0, quota: 0, count: 0 };
-      acc[k].consumed += (c.monthly_quota - (c.current_balance || 0));
-      acc[k].quota    += c.monthly_quota;
-      acc[k].count    += 1;
+    cards.reduce((acc,c)=>{
+      const k=c.category||"TOURISME";
+      if (!acc[k]) acc[k]={consumed:0,quota:0,count:0};
+      acc[k].consumed+=(c.monthly_quota-(c.current_balance||0));
+      acc[k].quota+=c.monthly_quota;
+      acc[k].count+=1;
       return acc;
-    }, {})
-  ).map(([cat, d]) => ({ cat, ...d, pct: d.quota > 0 ? (d.consumed / d.quota) * 100 : 0 }))
-   .sort((a, b) => b.consumed - a.consumed);
+    },{})
+  ).map(([cat,d])=>({cat,...d,pct:d.quota>0?(d.consumed/d.quota)*100:0}))
+   .sort((a,b)=>b.consumed-a.consumed);
 
-  // Top 5 véhicules depuis transactions
-  const vehicleMap = transactions.reduce((acc, t) => {
-    const key = t.vehicle_name || "Inconnu";
-    if (!acc[key]) acc[key] = { label: key, total: 0, litres: 0, count: 0 };
-    acc[key].total  += parseFloat(t.total_amount) || 0;
-    acc[key].litres += parseFloat(t.quantity_liters) || 0;
-    acc[key].count  += 1;
+  const vehicleMap = transactions.reduce((acc,t)=>{
+    const key=t.vehicle_name||"Inconnu";
+    if (!acc[key]) acc[key]={label:key,total:0,litres:0,count:0};
+    acc[key].total+=parseFloat(t.total_amount)||0;
+    acc[key].litres+=parseFloat(t.quantity_liters)||0;
+    acc[key].count+=1;
     return acc;
-  }, {});
-  const top5 = Object.values(vehicleMap)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 5);
+  },{});
+  const top5=Object.values(vehicleMap).sort((a,b)=>b.total-a.total).slice(0,5);
 
-  // ── Composants graphiques ────────────────────────────────────────────────
-
-  function BarChart({ data, labelKey, valueKey, height = 130, formatVal, colors }) {
-    if (!data || data.length === 0)
-      return <div style={{ textAlign: "center", color: C.textLight, padding: "20px 0", fontSize: 12 }}>Aucune donnée</div>;
-    const maxVal = Math.max(...data.map(d => parseFloat(d[valueKey]) || 0), 1);
-    const palette = colors || [C.green, C.blue, C.amber, C.orange, C.purple, C.greenMid];
-    const barW = Math.max(32, Math.floor(440 / data.length) - 12);
-    const svgW = data.length * (barW + 12) + 8;
+  function BarChart({ data, labelKey, valueKey, height=130, formatVal, colors }) {
+    if (!data||data.length===0) return <div style={{textAlign:"center",color:C.textLight,padding:"20px 0",fontSize:12}}>Aucune donnée</div>;
+    const maxVal=Math.max(...data.map(d=>parseFloat(d[valueKey])||0),1);
+    const palette=colors||[C.green,C.greenMid,C.orange,C.red,C.amber,C.slate];
+    const barW=Math.max(32,Math.floor(440/data.length)-12);
+    const svgW=data.length*(barW+12)+8;
     return (
-      <div style={{ overflowX: "auto" }}>
-        <svg width={svgW} height={height + 48} style={{ display: "block" }}>
-          {[0.25, 0.5, 0.75, 1].map((f, i) => {
-            const y = Math.round(height - f * height);
-            return <line key={i} x1={0} y1={y} x2={svgW} y2={y} stroke={C.border} strokeWidth={1} strokeDasharray="3,3" />;
+      <div style={{overflowX:"auto"}}>
+        <svg width={svgW} height={height+48} style={{display:"block"}}>
+          {[.25,.5,.75,1].map((f,i)=>{
+            const y=Math.round(height-f*height);
+            return <line key={i} x1={0} y1={y} x2={svgW} y2={y} stroke={C.border} strokeWidth={1} strokeDasharray="3,3"/>;
           })}
-          {data.map((d, i) => {
-            const val  = parseFloat(d[valueKey]) || 0;
-            const barH = Math.max(2, Math.round((val / maxVal) * height));
-            const x    = i * (barW + 12) + 6;
-            const col  = palette[i % palette.length];
-            const labelStr = formatVal ? formatVal(val) : fmtNum(Math.round(val));
+          {data.map((d,i)=>{
+            const val=parseFloat(d[valueKey])||0;
+            const barH=Math.max(2,Math.round((val/maxVal)*height));
+            const x=i*(barW+12)+6;
+            const col=palette[i%palette.length];
+            const ls=formatVal?formatVal(val):fmtNum(Math.round(val));
             return (
               <g key={i}>
-                <rect x={x} y={0} width={barW} height={height} rx={6} fill={C.bg} />
-                <rect x={x} y={height - barH} width={barW} height={barH} rx={6} fill={col} opacity={0.88} />
-                <text
-                  x={x + barW / 2}
-                  y={barH > 20 ? height - barH + 14 : height - barH - 5}
-                  textAnchor="middle" fontSize={9} fontWeight={700}
-                  fill={barH > 20 ? "#fff" : col}>
-                  {labelStr}
-                </text>
-                <text x={x + barW / 2} y={height + 16} textAnchor="middle" fontSize={9} fill={C.textMid} fontWeight={600}>
-                  {(d[labelKey] || "").toString().slice(0, 9)}
-                </text>
+                <rect x={x} y={0} width={barW} height={height} rx={6} fill={C.bg}/>
+                <rect x={x} y={height-barH} width={barW} height={barH} rx={6} fill={col} opacity={.88}/>
+                <text x={x+barW/2} y={barH>20?height-barH+14:height-barH-5} textAnchor="middle" fontSize={9} fontWeight={700} fill={barH>20?"#fff":col}>{ls}</text>
+                <text x={x+barW/2} y={height+16} textAnchor="middle" fontSize={9} fill={C.textMid} fontWeight={600}>{(d[labelKey]||"").toString().slice(0,9)}</text>
               </g>
             );
           })}
@@ -681,164 +862,161 @@ function StatsView({ dashboard, cards, transactions, printPDF }) {
     );
   }
 
-  function DonutChart({ segments, size = 120, centerLabel, centerSub }) {
-    const nonEmpty = segments.filter(s => s.value > 0);
-    if (!nonEmpty.length)
-      return (
-        <div style={{ width: size, height: size, borderRadius: "50%", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 10, color: C.textLight }}>
-          Aucune donnée
-        </div>
-      );
-    const total = nonEmpty.reduce((s, seg) => s + seg.value, 0);
-    const r = size / 2 - 12, cx = size / 2, cy = size / 2;
-    let angle = -Math.PI / 2;
-    const arcs = nonEmpty.map(seg => {
-      const start = angle;
-      const sweep = (seg.value / total) * 2 * Math.PI;
-      angle += sweep;
-      const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
-      const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
-      return { ...seg, d: `M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z` };
+  function DonutChart({ segments, size=120, centerLabel, centerSub }) {
+    const nonEmpty=segments.filter(s=>s.value>0);
+    if (!nonEmpty.length) return <div style={{width:size,height:size,borderRadius:"50%",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textLight}}>Aucune donnée</div>;
+    const total=nonEmpty.reduce((s,sg)=>s+sg.value,0);
+    const r=size/2-12,cx=size/2,cy=size/2;
+    let angle=-Math.PI/2;
+    const arcs=nonEmpty.map(sg=>{
+      const start=angle,sweep=(sg.value/total)*2*Math.PI;
+      angle+=sweep;
+      const x1=cx+r*Math.cos(start),y1=cy+r*Math.sin(start);
+      const x2=cx+r*Math.cos(angle),y2=cy+r*Math.sin(angle);
+      return {...sg,d:`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${sweep>Math.PI?1:0} 1 ${x2} ${y2}Z`};
     });
     return (
-      <svg width={size} height={size} style={{ flexShrink: 0 }}>
-        {arcs.map((a, i) => <path key={i} d={a.d} fill={a.color} opacity={0.9} />)}
-        <circle cx={cx} cy={cy} r={r * 0.52} fill={C.white} />
+      <svg width={size} height={size} style={{flexShrink:0}}>
+        {arcs.map((a,i)=><path key={i} d={a.d} fill={a.color} opacity={.9}/>)}
+        <circle cx={cx} cy={cy} r={r*.52} fill={C.white}/>
         {centerLabel
-          ? <><text x={cx} y={cy + 4} textAnchor="middle" fontSize={11} fontWeight={800} fill={C.text}>{centerLabel}</text>
-              <text x={cx} y={cy + 16} textAnchor="middle" fontSize={8} fill={C.textLight}>{centerSub}</text></>
-          : <><text x={cx} y={cy + 4} textAnchor="middle" fontSize={11} fontWeight={800} fill={C.text}>{Math.round(total / 1000)}k</text>
-              <text x={cx} y={cy + 16} textAnchor="middle" fontSize={8} fill={C.textLight}>FCFA</text></>
+          ?<><text x={cx} y={cy+4} textAnchor="middle" fontSize={11} fontWeight={800} fill={C.text}>{centerLabel}</text><text x={cx} y={cy+16} textAnchor="middle" fontSize={8} fill={C.textLight}>{centerSub}</text></>
+          :<><text x={cx} y={cy+4} textAnchor="middle" fontSize={11} fontWeight={800} fill={C.text}>{Math.round(total/1000)}k</text><text x={cx} y={cy+16} textAnchor="middle" fontSize={8} fill={C.textLight}>FCFA</text></>
         }
       </svg>
     );
   }
 
-  function GaugeChart({ pct, size = 140 }) {
-    const r = size / 2 - 14, cx = size / 2, cy = size * 0.66;
-    const circ = Math.PI * r;
-    const p = Math.min(100, Math.max(0, pct || 0));
-    const color = p >= 100 ? C.red : p >= 80 ? C.amber : C.green;
-    const dashOffset = circ - (p / 100) * circ;
-    const needleAngle = -Math.PI + (p / 100) * Math.PI;
-    const nx = cx + r * 0.7 * Math.cos(needleAngle);
-    const ny = cy + r * 0.7 * Math.sin(needleAngle);
+  function GaugeChart({ pct, size=140 }) {
+    const r=size/2-14,cx=size/2,cy=size*.66,circ=Math.PI*r;
+    const p=Math.min(100,Math.max(0,pct||0));
+    const color=p>=100?C.red:p>=80?C.amber:C.green;
+    const dashOffset=circ-(p/100)*circ;
+    const needleAngle=-Math.PI+(p/100)*Math.PI;
+    const nx=cx+r*.7*Math.cos(needleAngle),ny=cy+r*.7*Math.sin(needleAngle);
     return (
-      <svg width={size} height={size * 0.72} viewBox={`0 0 ${size} ${size * 0.72}`} style={{ flexShrink: 0 }}>
-        <path d={`M${14} ${cy} A${r} ${r} 0 0 1 ${size - 14} ${cy}`} fill="none" stroke="#E8EDE9" strokeWidth={13} strokeLinecap="round" />
-        <path d={`M${14} ${cy} A${r} ${r} 0 0 1 ${size - 14} ${cy}`} fill="none" stroke={color} strokeWidth={13} strokeLinecap="round"
-          strokeDasharray={circ} strokeDashoffset={dashOffset} style={{ transition: "stroke-dashoffset .8s ease" }} />
-        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
-        <circle cx={cx} cy={cy} r={5} fill={color} />
-        <text x={cx} y={cy - 14} textAnchor="middle" fontSize={18} fontWeight={800} fill={color}>{Math.round(p)}%</text>
-        <text x={cx} y={cy + 2} textAnchor="middle" fontSize={8} fill={C.textLight}>du budget utilisé</text>
-        <text x={15} y={cy + 16} textAnchor="middle" fontSize={8} fill={C.textLight}>0%</text>
-        <text x={size - 15} y={cy + 16} textAnchor="middle" fontSize={8} fill={C.textLight}>100%</text>
+      <svg width={size} height={size*.72} viewBox={`0 0 ${size} ${size*.72}`} style={{flexShrink:0}}>
+        <path d={`M${14} ${cy} A${r} ${r} 0 0 1 ${size-14} ${cy}`} fill="none" stroke="#E8EDE9" strokeWidth={13} strokeLinecap="round"/>
+        <path d={`M${14} ${cy} A${r} ${r} 0 0 1 ${size-14} ${cy}`} fill="none" stroke={color} strokeWidth={13} strokeLinecap="round"
+          strokeDasharray={circ} strokeDashoffset={dashOffset} style={{transition:"stroke-dashoffset .8s ease"}}/>
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={color} strokeWidth={2.5} strokeLinecap="round"/>
+        <circle cx={cx} cy={cy} r={5} fill={color}/>
+        <text x={cx} y={cy-14} textAnchor="middle" fontSize={18} fontWeight={800} fill={color}>{Math.round(p)}%</text>
+        <text x={cx} y={cy+2} textAnchor="middle" fontSize={8} fill={C.textLight}>du budget utilisé</text>
+        <text x={15} y={cy+16} textAnchor="middle" fontSize={8} fill={C.textLight}>0%</text>
+        <text x={size-15} y={cy+16} textAnchor="middle" fontSize={8} fill={C.textLight}>100%</text>
       </svg>
     );
   }
 
   function StackedBar({ consumed, quota, label, color }) {
-    const pct = quota > 0 ? Math.min(100, (consumed / quota) * 100) : 0;
-    const col = pct >= 100 ? C.red : pct >= 80 ? C.amber : color;
+    const pct=quota>0?Math.min(100,(consumed/quota)*100):0;
+    const col=pct>=100?C.red:pct>=80?C.amber:color;
     return (
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
-          <span style={{ fontWeight: 700, color: C.text }}>{label}</span>
-          <span style={{ fontWeight: 800, color: col }}>{fmtPct(pct)}</span>
+      <div style={{marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}>
+          <span style={{fontWeight:700,color:C.text}}>{label}</span>
+          <span style={{fontWeight:800,color:col}}>{fmtPct(pct)}</span>
         </div>
-        <div style={{ position: "relative", height: 9, background: C.bg, borderRadius: 99, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: col, borderRadius: 99, transition: "width .6s ease" }} />
-          <div style={{ position: "absolute", left: "80%", top: 0, height: "100%", width: 2, background: `${C.amber}70` }} />
+        <div style={{position:"relative",height:9,background:C.bg,borderRadius:99,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${pct}%`,background:col,borderRadius:99,transition:"width .6s ease"}}/>
+          <div style={{position:"absolute",left:"80%",top:0,height:"100%",width:2,background:`${C.amber}70`}}/>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.textLight, marginTop: 3 }}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.textLight,marginTop:3}}>
           <span>{fmtMoney(Math.round(consumed))}</span><span>/ {fmtMoney(Math.round(quota))}</span>
         </div>
       </div>
     );
   }
 
-  // ── Rendu ────────────────────────────────────────────────────────────────
-  if (cards.length === 0) return (
-    <div style={{ background: C.white, borderRadius: 12, padding: "60px 20px", textAlign: "center", border: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Aucune donnée disponible</div>
-      <div style={{ fontSize: 12, color: C.textLight, marginTop: 6 }}>Créez des cartes et enregistrez des transactions pour voir les statistiques.</div>
+  if (cards.length===0) return (
+    <div style={{background:C.white,borderRadius:12,padding:"60px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+      <BarChart2 size={40} color={C.textLight} style={{margin:"0 auto 12px"}}/>
+      <div style={{fontSize:14,fontWeight:700,color:C.text}}>Aucune donnée disponible</div>
+      <div style={{fontSize:12,color:C.textLight,marginTop:6}}>Créez des cartes et enregistrez des transactions pour voir les statistiques.</div>
     </div>
   );
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+  // KPIs couleurs adaptées
+  const kpiColors = [
+    usagePct>85?C.red:C.green,
+    C.orange,
+    C.greenMid,
+    C.slate,
+  ];
 
-      {/* ── KPIs 4 blocs ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* KPIs */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
-          { label: "Taux utilisation",    val: fmtPct(usagePct),                    color: usagePct > 85 ? C.red : C.green, icon: "📊", sub: `${fmtMoney(Math.round(consumed))} consommés` },
-          { label: "Coût moyen / carte",  val: cards.length > 0 ? fmtMoney(Math.round(consumed / cards.length)) : "—", color: C.amber, icon: "💳", sub: `${cards.length} carte${cards.length > 1 ? "s" : ""}` },
-          { label: "Volume total",        val: `${totalLitres.toFixed(0)} L`,        color: C.blue,   icon: "⛽", sub: `${transactions.length} saisie${transactions.length > 1 ? "s" : ""}` },
-          { label: "Coût moyen / saisie", val: avgTx > 0 ? fmtMoney(avgTx) : "—",   color: C.purple, icon: "🧾", sub: `${txValidees.length} validée${txValidees.length > 1 ? "s" : ""}` },
-        ].map((k, i) => (
-          <div key={i} style={{ background: C.white, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, borderTop: `3px solid ${k.color}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: C.textLight, textTransform: "uppercase", letterSpacing: "1px" }}>{k.label}</span>
-              <span style={{ fontSize: 14 }}>{k.icon}</span>
+          {label:"Taux utilisation",   val:fmtPct(usagePct),                              icon:TrendingUp,  sub:`${fmtMoney(Math.round(consumed))} consommés`},
+          {label:"Coût moyen / carte", val:cards.length>0?fmtMoney(Math.round(consumed/cards.length)):"—", icon:CreditCard, sub:`${cards.length} carte${cards.length>1?"s":""}`},
+          {label:"Volume total",       val:`${totalLitres.toFixed(0)} L`,                  icon:Fuel,        sub:`${transactions.length} saisie${transactions.length>1?"s":""}`},
+          {label:"Coût moyen / saisie",val:avgTx>0?fmtMoney(avgTx):"—",                   icon:Activity,    sub:`${txValidees.length} validée${txValidees.length>1?"s":""}`},
+        ].map((k,i)=>{
+          const Icon=k.icon;
+          return (
+            <div key={i} style={{background:C.white,borderRadius:12,padding:"12px 14px",border:`1px solid ${C.border}`,borderTop:`3px solid ${kpiColors[i]}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <span style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"1px"}}>{k.label}</span>
+                <Icon size={14} color={kpiColors[i]}/>
+              </div>
+              <div style={{fontSize:18,fontWeight:800,color:kpiColors[i]}}>{k.val}</div>
+              <div style={{fontSize:9,color:C.textLight,marginTop:3}}>{k.sub}</div>
             </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: k.color }}>{k.val}</div>
-            <div style={{ fontSize: 9, color: C.textLight, marginTop: 3 }}>{k.sub}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* ── Gauge budget + Donut type ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 12 }}>📈 Utilisation du budget mensuel</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-            <GaugeChart pct={usagePct} size={140} />
+      {/* Gauge + Donut type */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+            <TrendingUp size={14} color={C.green}/> Utilisation du budget mensuel
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:18}}>
+            <GaugeChart pct={usagePct} size={140}/>
             <div>
               {[
-                { label: "Budget total", val: fmtMoney(budgetTotal),            color: C.blue  },
-                { label: "Consommé",     val: fmtMoney(Math.round(consumed)),   color: C.amber },
-                { label: "Restant",      val: fmtMoney(Math.round(budgetTotal - consumed)), color: C.green },
-              ].map((f, i) => (
-                <div key={i} style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 9, color: C.textLight, textTransform: "uppercase", letterSpacing: "1px" }}>{f.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: f.color }}>{f.val}</div>
+                {label:"Budget total",val:fmtMoney(budgetTotal),     color:C.green },
+                {label:"Consommé",    val:fmtMoney(Math.round(consumed)), color:C.orange},
+                {label:"Restant",     val:fmtMoney(Math.round(budgetTotal-consumed)),color:C.greenMid},
+              ].map((f,i)=>(
+                <div key={i} style={{marginBottom:8}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"1px"}}>{f.label}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:f.color}}>{f.val}</div>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 12 }}>🥧 Répartition par type de trajet</div>
-          {byTypeCalc.length === 0 ? (
-            <div style={{ textAlign: "center", color: C.textLight, padding: "30px 0", fontSize: 12 }}>Aucune transaction enregistrée</div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-              <DonutChart
-                segments={byTypeCalc.map(x => ({ label: x.label, value: x.total, color: x.type === "RAMASSAGE" ? C.green : C.blue }))}
-                size={120}
-              />
-              <div style={{ flex: 1 }}>
-                {byTypeCalc.map((s, i) => {
-                  const totalAll = byTypeCalc.reduce((a, x) => a + x.total, 0);
-                  const pct = totalAll > 0 ? (s.total / totalAll) * 100 : 0;
-                  const col = s.type === "RAMASSAGE" ? C.green : C.blue;
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+            <Activity size={14} color={C.green}/> Répartition par type de trajet
+          </div>
+          {byTypeCalc.length===0?(
+            <div style={{textAlign:"center",color:C.textLight,padding:"30px 0",fontSize:12}}>Aucune transaction enregistrée</div>
+          ):(
+            <div style={{display:"flex",alignItems:"center",gap:18}}>
+              <DonutChart segments={byTypeCalc.map(x=>({label:x.label,value:x.total,color:x.type==="RAMASSAGE"?C.green:C.orange}))} size={120}/>
+              <div style={{flex:1}}>
+                {byTypeCalc.map((s,i)=>{
+                  const totalAll=byTypeCalc.reduce((a,x)=>a+x.total,0);
+                  const pct=totalAll>0?(s.total/totalAll)*100:0;
+                  const col=s.type==="RAMASSAGE"?C.green:C.orange;
                   return (
-                    <div key={i} style={{ marginBottom: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 600, color: C.text }}>
-                          <span style={{ width: 8, height: 8, borderRadius: 2, background: col, display: "inline-block" }} />
+                    <div key={i} style={{marginBottom:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                        <span style={{display:"flex",alignItems:"center",gap:5,fontWeight:600,color:C.text}}>
+                          <span style={{width:8,height:8,borderRadius:2,background:col,display:"inline-block"}}/>
                           {s.label}
                         </span>
-                        <span style={{ fontWeight: 800, color: col }}>{fmtPct(pct)}</span>
+                        <span style={{fontWeight:800,color:col}}>{fmtPct(pct)}</span>
                       </div>
-                      <ProgressBar pct={pct} height={5} />
-                      <div style={{ fontSize: 9, color: C.textLight, marginTop: 2 }}>
-                        {fmtMoney(Math.round(s.total))} · {s.litres.toFixed(1)}L · {s.count} saisie{s.count > 1 ? "s" : ""}
-                      </div>
+                      <ProgressBar pct={pct} height={5}/>
+                      <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{fmtMoney(Math.round(s.total))} · {s.litres.toFixed(1)}L · {s.count} saisie{s.count>1?"s":""}</div>
                     </div>
                   );
                 })}
@@ -848,60 +1026,58 @@ function StatsView({ dashboard, cards, transactions, printPDF }) {
         </div>
       </div>
 
-      {/* ── BarChart + StackedBar catégories ── */}
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 4 }}>📊 Consommation par catégorie de flotte</div>
-        <div style={{ fontSize: 11, color: C.textLight, marginBottom: 16 }}>Montant consommé ce mois et taux d'utilisation du quota</div>
+      {/* BarChart catégories */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+        <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+          <BarChart2 size={14} color={C.green}/> Consommation par catégorie de flotte
+        </div>
+        <div style={{fontSize:11,color:C.textLight,marginBottom:16}}>Montant consommé ce mois et taux d'utilisation du quota</div>
         <BarChart
-          data={catGroups.map(g => ({ label: catLabels[g.cat] || g.cat, total: g.consumed }))}
+          data={catGroups.map(g=>({label:CAT_CFG[g.cat]?.label||g.cat,total:g.consumed}))}
           labelKey="label" valueKey="total" height={120}
-          colors={catGroups.map(g => catColors[g.cat] || C.textMid)}
-          formatVal={v => v > 999 ? `${Math.round(v / 1000)}k` : Math.round(v).toString()}
+          colors={catGroups.map(g=>catColors[g.cat]||C.slate)}
+          formatVal={v=>v>999?`${Math.round(v/1000)}k`:Math.round(v).toString()}
         />
-        <div style={{ marginTop: 18, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-          {catGroups.map((g, i) => (
-            <StackedBar key={i}
-              consumed={g.consumed} quota={g.quota}
-              label={`${catLabels[g.cat] || g.cat} (${g.count} carte${g.count > 1 ? "s" : ""})`}
-              color={catColors[g.cat] || C.textMid}
-            />
+        <div style={{marginTop:18,borderTop:`1px solid ${C.border}`,paddingTop:16}}>
+          {catGroups.map((g,i)=>(
+            <StackedBar key={i} consumed={g.consumed} quota={g.quota}
+              label={`${CAT_CFG[g.cat]?.label||g.cat} (${g.count} carte${g.count>1?"s":""})`}
+              color={catColors[g.cat]||C.slate}/>
           ))}
         </div>
       </div>
 
-      {/* ── Donut statut + BarChart litres ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 12 }}>📋 Statut des saisies ({transactions.length})</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+      {/* Donut statut + litres */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+            <FileText size={14} color={C.green}/> Statut des saisies ({transactions.length})
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:18}}>
             <DonutChart
               segments={[
-                { label: "Validées",   value: txValidees.length,  color: C.green },
-                { label: "En attente", value: txAttente.length,   color: C.amber },
-                { label: "Rejetées",   value: txRejetees.length,  color: C.red   },
+                {label:"Validées",  value:txValidees.length, color:C.green },
+                {label:"En attente",value:txAttente.length,  color:C.amber },
+                {label:"Rejetées",  value:txRejetees.length, color:C.red   },
               ]}
-              size={120}
-              centerLabel={transactions.length.toString()}
-              centerSub="total"
+              size={120} centerLabel={transactions.length.toString()} centerSub="total"
             />
-            <div style={{ flex: 1 }}>
+            <div style={{flex:1}}>
               {[
-                { label: "Validées",   count: txValidees.length,  color: C.green },
-                { label: "En attente", count: txAttente.length,   color: C.amber },
-                { label: "Rejetées",   count: txRejetees.length,  color: C.red   },
-              ].map((s, i) => {
-                const pct = transactions.length > 0 ? (s.count / transactions.length) * 100 : 0;
+                {label:"Validées",  count:txValidees.length, color:C.green },
+                {label:"En attente",count:txAttente.length,  color:C.amber },
+                {label:"Rejetées",  count:txRejetees.length, color:C.red   },
+              ].map((s,i)=>{
+                const pct=transactions.length>0?(s.count/transactions.length)*100:0;
                 return (
-                  <div key={i} style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 600, color: C.text }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, display: "inline-block" }} />
-                        {s.label}
+                  <div key={i} style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{display:"flex",alignItems:"center",gap:5,fontWeight:600,color:C.text}}>
+                        <span style={{width:8,height:8,borderRadius:2,background:s.color,display:"inline-block"}}/>{s.label}
                       </span>
-                      <span style={{ fontWeight: 800, color: s.color }}>{s.count}</span>
+                      <span style={{fontWeight:800,color:s.color}}>{s.count}</span>
                     </div>
-                    <ProgressBar pct={pct} height={5} />
+                    <ProgressBar pct={pct} height={5}/>
                   </div>
                 );
               })}
@@ -909,52 +1085,53 @@ function StatsView({ dashboard, cards, transactions, printPDF }) {
           </div>
         </div>
 
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 4 }}>⛽ Volume en litres par type</div>
-          <div style={{ fontSize: 11, color: C.textLight, marginBottom: 16 }}>Total : {totalLitres.toFixed(1)} L</div>
-          {byTypeCalc.length === 0 ? (
-            <div style={{ textAlign: "center", color: C.textLight, padding: "30px 0", fontSize: 12 }}>Aucune donnée</div>
-          ) : (
-            <BarChart
-              data={byTypeCalc.map(x => ({ label: x.label, litres: x.litres }))}
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+            <Fuel size={14} color={C.green}/> Volume en litres par type
+          </div>
+          <div style={{fontSize:11,color:C.textLight,marginBottom:16}}>Total : {totalLitres.toFixed(1)} L</div>
+          {byTypeCalc.length===0?(
+            <div style={{textAlign:"center",color:C.textLight,padding:"30px 0",fontSize:12}}>Aucune donnée</div>
+          ):(
+            <BarChart data={byTypeCalc.map(x=>({label:x.label,litres:x.litres}))}
               labelKey="label" valueKey="litres" height={110}
-              colors={[C.green, C.blue]}
-              formatVal={v => `${Number(v).toFixed(0)}L`}
-            />
+              colors={[C.green,C.orange]}
+              formatVal={v=>`${Number(v).toFixed(0)}L`}/>
           )}
         </div>
       </div>
 
-      {/* ── Top 5 véhicules ── */}
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 20px" }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 4 }}>🏆 Top 5 véhicules consommateurs</div>
-        <div style={{ fontSize: 11, color: C.textLight, marginBottom: 16 }}>Calculé sur les {transactions.length} saisie{transactions.length > 1 ? "s" : ""} chargées</div>
-        {top5.length === 0 ? (
-          <div style={{ textAlign: "center", color: C.textLight, padding: "16px 0", fontSize: 12 }}>Aucune donnée</div>
-        ) : (
+      {/* Top 5 véhicules */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"16px 20px"}}>
+        <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+          <Star size={14} color={C.green}/> Top 5 véhicules consommateurs
+        </div>
+        <div style={{fontSize:11,color:C.textLight,marginBottom:16}}>
+          Calculé sur les {transactions.length} saisie{transactions.length>1?"s":""} chargées
+        </div>
+        {top5.length===0?(
+          <div style={{textAlign:"center",color:C.textLight,padding:"16px 0",fontSize:12}}>Aucune donnée</div>
+        ):(
           <>
             <BarChart
-              data={top5.map(x => ({ label: x.label.slice(0, 9), total: x.total }))}
+              data={top5.map(x=>({label:x.label.slice(0,9),total:x.total}))}
               labelKey="label" valueKey="total" height={120}
-              colors={[C.green, C.greenMid, C.blue, C.amber, C.orange]}
-              formatVal={v => `${Math.round(v / 1000)}k`}
-            />
-            <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              {top5.map((item, i) => {
-                const pct2 = consumed > 0 ? (item.total / consumed) * 100 : 0;
-                const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+              colors={[C.green,C.greenMid,C.orange,C.amber,C.red]}
+              formatVal={v=>`${Math.round(v/1000)}k`}/>
+            <div style={{marginTop:16,borderTop:`1px solid ${C.border}`,paddingTop:14,display:"flex",flexDirection:"column",gap:10}}>
+              {top5.map((item,i)=>{
+                const pct2=consumed>0?(item.total/consumed)*100:0;
+                const medals=["🥇","🥈","🥉","4","5"];
                 return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontSize: 16, flexShrink: 0 }}>{medals[i]}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
-                        <span style={{ fontWeight: 800, color: C.amber, flexShrink: 0, marginLeft: 8 }}>{fmtMoney(Math.round(item.total))}</span>
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:16,flexShrink:0,width:20,textAlign:"center"}}>{medals[i]}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}>
+                        <span style={{fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</span>
+                        <span style={{fontWeight:800,color:C.orange,flexShrink:0,marginLeft:8}}>{fmtMoney(Math.round(item.total))}</span>
                       </div>
-                      <ProgressBar pct={pct2} height={6} />
-                      <div style={{ fontSize: 9, color: C.textLight, marginTop: 2 }}>
-                        {item.litres.toFixed(1)}L · {item.count} saisie{item.count > 1 ? "s" : ""} · {fmtPct(pct2)} du total
-                      </div>
+                      <ProgressBar pct={pct2} height={6}/>
+                      <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{item.litres.toFixed(1)}L · {item.count} saisie{item.count>1?"s":""} · {fmtPct(pct2)} du total</div>
                     </div>
                   </div>
                 );
@@ -964,308 +1141,678 @@ function StatsView({ dashboard, cards, transactions, printPDF }) {
         )}
       </div>
 
-      {/* ── Cartes en alerte ── */}
-      {alertCards.length > 0 && (
-        <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-            <span>⚠️</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>Cartes à surveiller</span>
-            <span style={{ fontSize: 10, color: C.amber, background: C.amberLight, padding: "1px 7px", borderRadius: 99, fontWeight: 700 }}>{alertCards.length}</span>
+      {/* Cartes en alerte */}
+      {alertCards.length>0&&(
+        <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+          <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8}}>
+            <AlertTriangle size={14} color={C.amber}/>
+            <span style={{fontSize:12,fontWeight:800,color:C.text}}>Cartes à surveiller</span>
+            <span style={{fontSize:10,color:C.amber,background:C.amberLight,padding:"1px 7px",borderRadius:99,fontWeight:700}}>{alertCards.length}</span>
           </div>
-          {alertCards.map((c, i) => (
-            <div key={i} style={{ padding: "10px 18px", borderBottom: i < alertCards.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+          {alertCards.map((c,i)=>(
+            <div key={i} style={{padding:"10px 18px",borderBottom:i<alertCards.length-1?`1px solid ${C.border}`:"none",display:"flex",alignItems:"center",gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:4}}>
                   {c.vehicle_info?.make} {c.vehicle_info?.model} · {c.vehicle_info?.registration_number}
                 </div>
-                <ProgressBar pct={c.usage_pct} height={6} />
+                <ProgressBar pct={c.usage_pct} height={6}/>
               </div>
-              <ThresholdBadge pct={c.usage_pct} />
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>{fmtMoney(c.current_balance)}</div>
-                <div style={{ fontSize: 9, color: C.textLight }}>restant</div>
+              <ThresholdBadge pct={c.usage_pct}/>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.green}}>{fmtMoney(c.current_balance)}</div>
+                <div style={{fontSize:9,color:C.textLight}}>restant</div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Export ── */}
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      {/* Export */}
+      <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Rapport mensuel complet</div>
-          <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>Toutes les transactions · {MOIS[now.getMonth()]} {now.getFullYear()}</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.text}}>Rapport mensuel complet</div>
+          <div style={{fontSize:11,color:C.textLight,marginTop:2}}>Toutes les transactions · {MOIS[now.getMonth()]} {now.getFullYear()}</div>
         </div>
-        <button onClick={printPDF} style={{ ...btn(C.green), fontSize: 12 }}>🖨️ Générer le rapport PDF</button>
+        <button onClick={printPDF} style={{...btn(C.green),fontSize:12}}>
+          <Printer size={14}/> Générer le rapport PDF
+        </button>
       </div>
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// PDF Print
+// PDF
 // ════════════════════════════════════════════════════════════════════════════
 function printTransactionsPDF(transactions, filterLabel, period) {
-  const rows = transactions.map(t => {
-    const s = STATUS_CFG[t.status] || { label: t.status };
+  const rows=transactions.map(t=>{
+    const s=STATUS_CFG[t.status]||{label:t.status};
     return `<tr>
-      <td>${fmtDT(t.transaction_date)}</td>
-      <td>${t.driver_name || "—"}</td>
-      <td>${t.vehicle_name || "—"}</td>
-      <td>${t.transaction_type === "RAMASSAGE" ? "Ramassage" : "Mission"}</td>
-      <td>${t.gas_station || "—"}</td>
-      <td style="text-align:right">${t.quantity_liters}L</td>
+      <td>${fmtDT(t.transaction_date)}</td><td>${t.driver_name||"—"}</td>
+      <td>${t.vehicle_name||"—"}</td><td>${t.transaction_type==="RAMASSAGE"?"Ramassage":"Mission"}</td>
+      <td>${t.gas_station||"—"}</td><td style="text-align:right">${t.quantity_liters}L</td>
       <td style="text-align:right">${fmtNum(t.unit_price)} F</td>
       <td style="text-align:right;font-weight:700">${fmtNum(t.total_amount)} F</td>
-      <td style="color:${s.color || '#888'};font-weight:700">${s.label}</td>
-    </tr>`;
+      <td style="font-weight:700">${s.label}</td></tr>`;
   }).join("");
-
-  const totalL = transactions.reduce((s, t) => s + (parseFloat(t.quantity_liters) || 0), 0);
-  const totalF = transactions.reduce((s, t) => s + (parseFloat(t.total_amount) || 0), 0);
-
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
-<title>Rapport carburant — ${filterLabel}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0} body{font-family:sans-serif;font-size:11px;color:#1a1a1a;padding:36px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;border-bottom:2px solid #1a1a1a;padding-bottom:16px}
-  .logo{font-size:18px;font-weight:700}.logo span{color:#1B5E37}
-  h1{font-size:15px;font-weight:700;margin-bottom:4px}.meta{color:#888;font-size:10px}
-  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
-  .kpi{background:#f9fafb;border-radius:8px;padding:12px 14px;border-left:3px solid #1B5E37}
-  .kpi-val{font-size:17px;font-weight:700;color:#1B5E37}.kpi-lbl{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
-  table{width:100%;border-collapse:collapse}
-  th{background:#f9fafb;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#6b7280;font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid #e5e7eb}
-  td{padding:7px 10px;border-bottom:1px solid #f3f4f6;color:#374151}
-  .tfoot td{background:#f9fafb;font-weight:700;border-top:2px solid #e5e7eb}
-  .footer{margin-top:28px;padding-top:12px;border-top:1px solid #eee;display:flex;justify-content:space-between;color:#aaa;font-size:9px}
-</style></head><body>
-<div class="header"><div><div class="logo">Parc<span>Auto</span> · BOCOM</div></div></div>
-<h1>Rapport carburant — ${filterLabel}</h1>
+  const totalL=transactions.reduce((s,t)=>s+(parseFloat(t.quantity_liters)||0),0);
+  const totalF=transactions.reduce((s,t)=>s+(parseFloat(t.total_amount)||0),0);
+  const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/><title>Rapport carburant</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;font-size:11px;color:#1a1a1a;padding:36px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;border-bottom:2px solid #1B5E37;padding-bottom:16px}
+h1{font-size:15px;font-weight:700;margin-bottom:4px}.meta{color:#888;font-size:10px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.kpi{background:#f9fafb;border-radius:8px;padding:12px 14px;border-left:3px solid #1B5E37}
+.kpi-val{font-size:17px;font-weight:700;color:#1B5E37}.kpi-lbl{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
+table{width:100%;border-collapse:collapse}
+th{background:#f9fafb;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:#6b7280;font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid #e5e7eb}
+td{padding:7px 10px;border-bottom:1px solid #f3f4f6;color:#374151}
+.tfoot td{background:#f9fafb;font-weight:700;border-top:2px solid #e5e7eb}</style></head><body>
+<div class="header"><h1>Rapport carburant — ${filterLabel}</h1><div style="font-weight:800;color:#1B5E37">BOCOM · DRIVEPARC</div></div>
 <div class="meta" style="margin-bottom:20px">${transactions.length} transaction(s) · ${period}</div>
 <div class="kpis">
-  <div class="kpi"><div class="kpi-val">${totalL.toFixed(1)} L</div><div class="kpi-lbl">Total carburant</div></div>
+  <div class="kpi"><div class="kpi-val">${totalL.toFixed(1)} L</div><div class="kpi-lbl">Volume total</div></div>
   <div class="kpi"><div class="kpi-val">${fmtNum(Math.round(totalF))} FCFA</div><div class="kpi-lbl">Montant total</div></div>
   <div class="kpi"><div class="kpi-val">${transactions.length}</div><div class="kpi-lbl">Transactions</div></div>
 </div>
-<table>
-  <thead><tr><th>Date</th><th>Chauffeur</th><th>Véhicule</th><th>Type</th><th>Station</th><th style="text-align:right">Litres</th><th style="text-align:right">Prix/L</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot><tr><td colspan="5">Total</td><td style="text-align:right">${totalL.toFixed(1)}L</td><td></td><td style="text-align:right">${fmtNum(Math.round(totalF))} F</td><td></td></tr></tfoot>
-</table>
-<div class="footer"><span>ParcAuto BOCOM</span><span>${transactions.length} transaction(s)</span></div>
+<table><thead><tr><th>Date</th><th>Chauffeur</th><th>Véhicule</th><th>Type</th><th>Station</th><th style="text-align:right">Litres</th><th style="text-align:right">Prix/L</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
+<tbody>${rows}</tbody>
+<tfoot><tr><td colspan="5">Total</td><td style="text-align:right">${totalL.toFixed(1)}L</td><td></td><td style="text-align:right">${fmtNum(Math.round(totalF))} F</td><td></td></tr></tfoot></table>
 </body></html>`;
-
-  const w = window.open("", "_blank");
-  if (!w) { alert("Autorisez les pop-ups pour imprimer."); return; }
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 600);
+  const w=window.open("","_blank");
+  if (!w){alert("Autorisez les pop-ups pour imprimer.");return;}
+  w.document.write(html);w.document.close();w.focus();
+  setTimeout(()=>w.print(),600);
 }
-
+function ModalScanQR({ onFound, onClose, showToast }) {
+  const videoRef   = useRef();
+  const canvasRef  = useRef();
+  const rafRef     = useRef();
+  const [scanning, setScanning] = useState(true);
+  const [error,    setError]    = useState("");
+ 
+  useEffect(() => {
+    let stream = null;
+ 
+    const start = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        scan();
+      } catch {
+        setError("Impossible d'accéder à la caméra. Autorisez l'accès dans les paramètres du navigateur.");
+        setScanning(false);
+      }
+    };
+ 
+    const scan = async () => {
+      // Import dynamique de jsqr (évite de charger la lib si inutilisée)
+      const { default: jsQR } = await import("jsqr");
+ 
+      const tick = () => {
+        const video  = videoRef.current;
+        const canvas = canvasRef.current;
+        if (!video || !canvas) return;
+ 
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          const { videoWidth: w, videoHeight: h } = video;
+          canvas.width  = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(video, 0, 0, w, h);
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const code = jsQR(imageData.data, w, h, { inversionAttempts: "dontInvert" });
+ 
+          if (code) {
+            try {
+              const payload = JSON.parse(code.data);
+              if (payload.card_id) {
+                cancelAnimationFrame(rafRef.current);
+                stream?.getTracks().forEach(t => t.stop());
+                setScanning(false);
+                onFound(payload); // { card_id, vehicle_reg, category }
+                return;
+              }
+            } catch {
+              // QR invalide, on continue à scanner
+            }
+          }
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+ 
+      rafRef.current = requestAnimationFrame(tick);
+    };
+ 
+    start();
+ 
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      stream?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+ 
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,.85)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 1200,
+      }}
+    >
+      <div
+        style={{
+          background: C.white, borderRadius: 20, overflow: "hidden",
+          width: 340, boxShadow: "0 24px 60px rgba(0,0,0,.4)",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px", display: "flex",
+            justifyContent: "space-between", alignItems: "center",
+            borderBottom: `1px solid ${C.border}`,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>📷</span> Scanner la carte BOCOM
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textLight }}>
+            <XCircle size={20} />
+          </button>
+        </div>
+ 
+        {/* Zone caméra */}
+        <div style={{ position: "relative", background: "#000", width: "100%", height: 280 }}>
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+          <canvas ref={canvasRef} style={{ display: "none" }} />
+ 
+          {/* Viseur */}
+          {scanning && (
+            <div
+              style={{
+                position: "absolute",
+                top: "50%", left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: 180, height: 180,
+              }}
+            >
+              {/* 4 coins */}
+              {[
+                { top: 0,    left: 0,    borderTop: `3px solid ${C.green}`, borderLeft:  `3px solid ${C.green}`, borderRadius: "8px 0 0 0" },
+                { top: 0,    right: 0,   borderTop: `3px solid ${C.green}`, borderRight: `3px solid ${C.green}`, borderRadius: "0 8px 0 0" },
+                { bottom: 0, left: 0,    borderBottom: `3px solid ${C.green}`, borderLeft:  `3px solid ${C.green}`, borderRadius: "0 0 0 8px" },
+                { bottom: 0, right: 0,   borderBottom: `3px solid ${C.green}`, borderRight: `3px solid ${C.green}`, borderRadius: "0 0 8px 0" },
+              ].map((s, i) => (
+                <div key={i} style={{ position: "absolute", width: 28, height: 28, ...s }} />
+              ))}
+              {/* Ligne scan animée */}
+              <div
+                style={{
+                  position: "absolute", left: 4, right: 4, height: 2,
+                  background: C.green, borderRadius: 1, opacity: 0.8,
+                  animation: "scanLine 1.5s ease-in-out infinite",
+                }}
+              />
+            </div>
+          )}
+ 
+          {error && (
+            <div
+              style={{
+                position: "absolute", inset: 0,
+                background: "rgba(0,0,0,.7)",
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                padding: 20, textAlign: "center",
+              }}
+            >
+              <AlertTriangle size={32} color={C.amber} style={{ marginBottom: 12 }} />
+              <div style={{ fontSize: 13, color: "#fff", lineHeight: 1.6 }}>{error}</div>
+            </div>
+          )}
+        </div>
+ 
+        {/* Footer */}
+        <div style={{ padding: "14px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: C.textLight, lineHeight: 1.6 }}>
+            Pointe la caméra vers le QR Code au dos de ta carte BOCOM.<br />
+            La reconnaissance est automatique.
+          </div>
+          <button onClick={onClose} style={{ ...ghostBtn, margin: "12px auto 0", justifyContent: "center" }}>
+            Annuler
+          </button>
+        </div>
+      </div>
+      {/* Keyframe pour la ligne scan */}
+      <style>{`@keyframes scanLine { 0%,100%{top:4px} 50%{top:170px} }`}</style>
+    </div>
+  );
+}
+function ModalMiniTransaction({ card, onClose, onSuccess, showToast }) {
+  const [liters,   setLiters]   = useState("");
+  const [file,     setFile]     = useState(null);
+  const [preview,  setPreview]  = useState(null);
+  const [saving,   setSaving]   = useState(false);
+  
+  const [error,    setError]    = useState("");
+  const fileRef = useRef();
+ 
+  const unitPrice = 650; // FCFA/L (valeur par défaut BOCOM, ajuste si besoin)
+  const total     = (parseFloat(liters) || 0) * unitPrice;
+  const solde     = parseFloat(card?.current_balance || 0);
+  const overBudget = total > 0 && total > solde;
+ 
+  const handleFile = f => {
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) { showToast("Fichier trop lourd (max 5 Mo)", "error"); return; }
+    setFile(f);
+    setPreview(f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+  };
+ 
+  const handleSubmit = async () => {
+    if (!liters || parseFloat(liters) <= 0) { setError("Entre le nombre de litres."); return; }
+    if (overBudget) { setError(`Dépasse le solde (${fmtMoney(solde)} restant).`); return; }
+    setError("");
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      // Type auto : BUS_SCOLAIRE → RAMASSAGE, sinon MISSION
+      fd.append("transaction_type", "RAMASSAGE");
+      fd.append("transaction_date", new Date().toISOString().slice(0, 16));
+      fd.append("quantity_liters",  liters);
+      fd.append("card_id", String(card.id));
+      fd.append("unit_price",       String(unitPrice));
+      fd.append("gas_station",      "BOCOM"); // chauffeur précise si besoin en note
+      if (file) fd.append("receipt_photo", file);
+      const tok = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+      const res = await fetch(`${API_BASE}/transactions/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}` },
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.detail || json?.message || "Erreur");
+      showToast("Saisie envoyée — en attente de validation ✓");
+      onSuccess();
+    } catch (e) {
+      showToast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+ 
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,.55)",
+        display: "flex", alignItems: "flex-end", justifyContent: "center",
+        zIndex: 1100,
+      }}
+    >
+      {/* Bottom sheet style mobile */}
+      <div
+        style={{
+          background: C.white,
+          borderRadius: "20px 20px 0 0",
+          width: "100%", maxWidth: 480,
+          padding: "20px 24px 32px",
+          boxShadow: "0 -8px 40px rgba(0,0,0,.2)",
+        }}
+      >
+        {/* Drag handle */}
+        <div style={{ width: 40, height: 4, background: C.border, borderRadius: 2, margin: "0 auto 20px" }} />
+ 
+        {/* Infos carte (lecture seule) */}
+        <div
+          style={{
+            background: C.greenLight, borderRadius: 12,
+            padding: "12px 16px", marginBottom: 20,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.green }}>
+              {card.vehicle_info?.make} {card.vehicle_info?.model}
+            </div>
+            <div style={{ fontSize: 11, color: C.textMid, marginTop: 2 }}>
+              {card.vehicle_info?.registration_number} · {CAT_CFG[card.category]?.label || card.category}
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 10, color: C.textMid, textTransform: "uppercase", letterSpacing: "1px" }}>Solde</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: overBudget ? C.red : C.green }}>
+              {fmtMoney(solde)}
+            </div>
+          </div>
+        </div>
+ 
+        {/* Champ 1 : Litres (GRAND, priorité mobile) */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>Litres pompés *</label>
+          <div style={{ position: "relative" }}>
+            <input
+              autoFocus
+              type="number"
+              step="0.5"
+              min="0"
+              value={liters}
+              onChange={e => { setLiters(e.target.value); setError(""); }}
+              placeholder="Ex : 85"
+              inputMode="decimal"
+              style={{
+                ...inp,
+                fontSize: 24,
+                fontWeight: 800,
+                padding: "14px 60px 14px 16px",
+                color: C.green,
+                borderColor: error ? C.red : liters ? C.green : C.border,
+              }}
+            />
+            <span
+              style={{
+                position: "absolute", right: 16, top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: 14, fontWeight: 600, color: C.textLight,
+              }}
+            >
+              litres
+            </span>
+          </div>
+          {/* Total calculé */}
+          {total > 0 && (
+            <div
+              style={{
+                marginTop: 8, padding: "8px 12px",
+                background: overBudget ? C.redLight : C.greenLight,
+                borderRadius: 8, fontSize: 13, fontWeight: 700,
+                color: overBudget ? C.red : C.green,
+                display: "flex", justifyContent: "space-between",
+              }}
+            >
+              <span>Total estimé ({unitPrice} FCFA/L)</span>
+              <span>{fmtMoney(Math.round(total))}</span>
+            </div>
+          )}
+          {error && <FieldError error={error} />}
+        </div>
+ 
+        {/* Champ 2 : Photo reçu */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={lbl}>Photo du reçu BOCOM (recommandé)</label>
+          <div
+            onClick={() => fileRef.current?.click()}
+            style={{
+              border: `2px dashed ${file ? C.green : C.border}`,
+              borderRadius: 12, padding: "14px 16px",
+              cursor: "pointer",
+              background: file ? C.greenLight : C.bg,
+              display: "flex", alignItems: "center", gap: 14,
+            }}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,.pdf"
+              capture="environment"  // ouvre la caméra directement sur mobile
+              style={{ display: "none" }}
+              onChange={e => handleFile(e.target.files?.[0])}
+            />
+            {preview
+              ? <img src={preview} alt="reçu" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8 }} />
+              : <div style={{ width: 56, height: 56, borderRadius: 8, background: C.border, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 24 }}>📷</span>
+                </div>
+            }
+            {file ? (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>{file.name}</div>
+                <button
+                  onClick={e => { e.stopPropagation(); setFile(null); setPreview(null); }}
+                  style={{ fontSize: 11, color: C.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, marginTop: 4, display: "flex", alignItems: "center", gap: 3 }}
+                >
+                  <XCircle size={10} /> Supprimer
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.textMid }}>Prendre une photo du reçu</div>
+                <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>JPG, PNG, PDF — max 5 Mo</div>
+              </div>
+            )}
+          </div>
+        </div>
+ 
+        {/* Bouton principal */}
+        <button
+          onClick={handleSubmit}
+          disabled={saving || !liters || overBudget}
+          style={{
+            ...btn(C.green),
+            width: "100%", justifyContent: "center",
+            padding: "15px 24px", fontSize: 15,
+            opacity: saving || !liters || overBudget ? 0.5 : 1,
+            borderRadius: 12,
+          }}
+        >
+          {saving ? <Spinner size={16} color="#fff" /> : <Fuel size={16} />}
+          {saving ? "Envoi en cours…" : "Envoyer la saisie"}
+        </button>
+ 
+        <button onClick={onClose} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 10 }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}
+ 
 // ════════════════════════════════════════════════════════════════════════════
 // MODAL TRANSACTION CHAUFFEUR
 // ════════════════════════════════════════════════════════════════════════════
 function ModalTransaction({ card, reservations, onClose, onSuccess, showToast }) {
   const [form, setForm] = useState({
-    transaction_type: card?.category === "BUS_SCOLAIRE" ? "RAMASSAGE" : "MISSION",
-    transaction_date: new Date().toISOString().slice(0, 16),
-    ville: "Douala", station: "", station_libre: "",
-    quantity_liters: "", unit_price: "650", notes: "",
-    reservation: "",
+    transaction_type: card?.category==="BUS_SCOLAIRE"?"RAMASSAGE":"MISSION",
+    transaction_date: new Date().toISOString().slice(0,16),
+    ville:"Douala",station:"",station_libre:"",
+    quantity_liters:"",unit_price:"650",notes:"",reservation:"",
   });
-  const [file, setFile]       = useState(null);
+  const [file, setFile]     = useState(null);
   const [preview, setPreview] = useState(null);
-  const [saving, setSaving]   = useState(false);
-  const [errors, setErrors]   = useState({});
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
   const fileRef = useRef();
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: "" })); };
+  const set=(k,v)=>{setForm(f=>({...f,[k]:v}));setErrors(e=>({...e,[k]:""}));};
 
-  const stationsVille  = BOCOM_STATIONS[form.ville] || [];
-  const isAutreVille   = form.ville === "Autre ville" || stationsVille.length === 0;
-  const stationFinale  = isAutreVille
-    ? (form.station_libre.trim() ? `BOCOM ${form.station_libre.trim()}` : "")
-    : form.station;
+  const stationsVille = BOCOM_STATIONS[form.ville]||[];
+  const isAutreVille  = form.ville==="Autre ville"||stationsVille.length===0;
+  const stationFinale = isAutreVille?(form.station_libre.trim()?`BOCOM ${form.station_libre.trim()}`:""):form.station;
 
-  const qty        = parseFloat(form.quantity_liters) || 0;
-  const price      = parseFloat(form.unit_price) || 0;
-  const total      = qty * price;
-  const solde      = parseFloat(card?.current_balance || 0);
-  const overBudget = total > 0 && total > solde;
+  const qty=parseFloat(form.quantity_liters)||0;
+  const price=parseFloat(form.unit_price)||0;
+  const total=qty*price;
+  const solde=parseFloat(card?.current_balance||0);
+  const overBudget=total>0&&total>solde;
 
-  const handleFileChange = (f) => {
+  const handleFileChange=(f)=>{
     if (!f) return;
-    if (f.size > 5 * 1024 * 1024) { showToast("Fichier trop volumineux (max 5 Mo)", "error"); return; }
+    if (f.size>5*1024*1024){showToast("Fichier trop volumineux (max 5 Mo)","error");return;}
     setFile(f);
-    setPreview(f.type.startsWith("image/") ? URL.createObjectURL(f) : null);
+    setPreview(f.type.startsWith("image/")?URL.createObjectURL(f):null);
   };
 
-  const validate = () => {
-    const e = {};
-    if (!form.quantity_liters || parseFloat(form.quantity_liters) <= 0) e.qty      = "Quantité en litres obligatoire (doit être > 0).";
-    if (!form.unit_price      || parseFloat(form.unit_price)      <= 0) e.price    = "Prix par litre obligatoire (doit être > 0).";
-    if (!stationFinale)                                                  e.station  = "Veuillez sélectionner ou saisir la station BOCOM.";
-    if (form.transaction_type === "MISSION" && !form.reservation)        e.reservation = "Veuillez lier une mission pour ce type de consommation.";
-    if (overBudget)                                                       e.budget  = `Le montant (${fmtMoney(Math.round(total))}) dépasse le solde disponible (${fmtMoney(solde)}).`;
+  const validate=()=>{
+    const e={};
+    if (!form.quantity_liters||parseFloat(form.quantity_liters)<=0) e.qty="Quantité en litres obligatoire (> 0).";
+    if (!form.unit_price||parseFloat(form.unit_price)<=0)           e.price="Prix par litre obligatoire (> 0).";
+    if (!stationFinale)                                              e.station="Veuillez sélectionner ou saisir la station BOCOM.";
+    if (form.transaction_type==="MISSION"&&!form.reservation)       e.reservation="Veuillez lier une mission.";
+    if (overBudget)                                                  e.budget=`Le montant (${fmtMoney(Math.round(total))}) dépasse le solde disponible (${fmtMoney(solde)}).`;
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return Object.keys(e).length===0;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit=async()=>{
     if (!validate()) return;
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append("transaction_type", form.transaction_type);
-      fd.append("transaction_date", form.transaction_date);
-      fd.append("gas_station",      stationFinale);
-      fd.append("quantity_liters",  form.quantity_liters);
-      fd.append("unit_price",       form.unit_price);
-      fd.append("notes",            form.notes);
-      if (form.reservation) fd.append("reservation", form.reservation);
-      if (file)             fd.append("receipt_photo", file);
-
-      const tok = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
-      const res = await fetch(`${API_BASE}/transactions/`, {
-        method: "POST", headers: { Authorization: `Bearer ${tok}` }, body: fd,
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.detail || json?.message || Object.values(json).flat()[0] || "Erreur");
+      const fd=new FormData();
+      fd.append("transaction_type",form.transaction_type);
+      fd.append("transaction_date",form.transaction_date);
+      fd.append("gas_station",stationFinale);
+      fd.append("quantity_liters",form.quantity_liters);
+      fd.append("unit_price",form.unit_price);
+      fd.append("notes",form.notes);
+      if (form.reservation) fd.append("reservation",form.reservation);
+      if (file)             fd.append("receipt_photo",file);
+      const tok=localStorage.getItem("access_token")||sessionStorage.getItem("access_token");
+      const res=await fetch(`${API_BASE}/transactions/`,{method:"POST",headers:{Authorization:`Bearer ${tok}`},body:fd});
+      const json=await res.json();
+      if (!res.ok) throw new Error(json?.detail||json?.message||Object.values(json).flat()[0]||"Erreur");
       showToast("Saisie enregistrée — en attente de validation ✓");
       onSuccess();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setSaving(false); }
+    } catch(e){showToast(e.message,"error");}
+    finally{setSaving(false);}
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-      <div style={{ background: C.white, borderRadius: 16, width: 600, maxWidth: "96vw", maxHeight: "92vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+      <div style={{background:C.white,borderRadius:16,width:600,maxWidth:"96vw",maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+        <div style={{padding:"20px 24px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Saisir une consommation</div>
-              <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>
+              <div style={{fontSize:15,fontWeight:800,color:C.text,display:"flex",alignItems:"center",gap:7}}>
+                <Fuel size={16} color={C.green}/> Saisir une consommation
+              </div>
+              <div style={{fontSize:11,color:C.textLight,marginTop:2}}>
                 BOCOM · {card?.vehicle_info?.make} {card?.vehicle_info?.model} · {card?.vehicle_info?.registration_number}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: C.textLight }}>✕</button>
+            <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.textLight,display:"flex"}}><XCircle size={20}/></button>
           </div>
         </div>
-
-        <div style={{ padding: "10px 24px", background: overBudget ? C.redLight : C.greenLight, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: overBudget ? C.red : C.textMid, fontWeight: 600 }}>
-            {overBudget ? "⚠ Montant supérieur au solde disponible" : "💳 Solde disponible"}
+        <div style={{padding:"10px 24px",background:overBudget?C.redLight:C.greenLight,flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:12,color:overBudget?C.red:C.textMid,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
+            {overBudget?<AlertTriangle size={13}/>:<Wallet size={13}/>}
+            {overBudget?"Montant supérieur au solde disponible":"Solde disponible"}
           </span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: overBudget ? C.red : C.green }}>{fmtMoney(solde)}</span>
+          <span style={{fontSize:16,fontWeight:800,color:overBudget?C.red:C.green}}>{fmtMoney(solde)}</span>
         </div>
 
-        <div style={{ overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-
+        <div style={{overflowY:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:16,flex:1}}>
           {/* Type */}
           <div>
             <label style={lbl}>Type de consommation *</label>
-            <div style={{ display: "flex", gap: 10 }}>
-              {[
-                ["RAMASSAGE", "🚌", "Ramassage scolaire"],
-                ["MISSION",   "🗺️", "Mission assignée"],
-              ].map(([val, icon, label]) => (
-                <button key={val} type="button" onClick={() => set("transaction_type", val)}
-                  style={{ flex: 1, padding: "11px 14px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-                    border: `2px solid ${form.transaction_type === val ? C.green : C.border}`,
-                    background: form.transaction_type === val ? C.greenLight : C.white }}>
-                  <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: form.transaction_type === val ? C.green : C.text }}>{label}</div>
+            <div style={{display:"flex",gap:10}}>
+              {[["RAMASSAGE",Bus,"Ramassage scolaire"],["MISSION",MapPin,"Mission assignée"]].map(([val,Icon,label])=>(
+                <button key={val} type="button" onClick={()=>set("transaction_type",val)}
+                  style={{flex:1,padding:"11px 14px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                    border:`2px solid ${form.transaction_type===val?C.green:C.border}`,
+                    background:form.transaction_type===val?C.greenLight:C.white}}>
+                  <Icon size={20} color={form.transaction_type===val?C.green:C.textLight} style={{marginBottom:4}}/>
+                  <div style={{fontSize:12,fontWeight:700,color:form.transaction_type===val?C.green:C.text}}>{label}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          {form.transaction_type === "MISSION" && (
+          {form.transaction_type==="MISSION"&&(
             <div>
               <label style={lbl}>Mission liée *</label>
-              <select style={errors.reservation ? inpErr : inp} value={form.reservation} onChange={e => set("reservation", e.target.value)}>
+              <select style={errors.reservation?inpErr:inp} value={form.reservation} onChange={e=>set("reservation",e.target.value)}>
                 <option value="">— Sélectionner la réservation —</option>
-                {(reservations || []).map(r => (
-                  <option key={r.id} value={r.id}>{r.requester_name} → {r.destination} · {r.start_date ? new Date(r.start_date).toLocaleDateString("fr-FR") : "—"}</option>
+                {(reservations||[]).map(r=>(
+                  <option key={r.id} value={r.id}>{r.requester_name} → {r.destination} · {r.start_date?new Date(r.start_date).toLocaleDateString("fr-FR"):"—"}</option>
                 ))}
               </select>
-              <FieldError error={errors.reservation} />
+              <FieldError error={errors.reservation}/>
             </div>
           )}
 
           <div>
             <label style={lbl}>Date et heure *</label>
-            <input style={inp} type="datetime-local" value={form.transaction_date} onChange={e => set("transaction_date", e.target.value)} />
+            <input style={inp} type="datetime-local" value={form.transaction_date} onChange={e=>set("transaction_date",e.target.value)}/>
           </div>
 
           {/* Station */}
           <div>
             <label style={lbl}>Station BOCOM *</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
               <div>
-                <div style={{ fontSize: 10, color: C.textLight, marginBottom: 4 }}>Ville</div>
-                <select style={inp} value={form.ville} onChange={e => { set("ville", e.target.value); set("station", ""); set("station_libre", ""); }}>
-                  {Object.keys(BOCOM_STATIONS).map(v => <option key={v}>{v}</option>)}
+                <div style={{fontSize:10,color:C.textLight,marginBottom:4}}>Ville</div>
+                <select style={inp} value={form.ville} onChange={e=>{set("ville",e.target.value);set("station","");set("station_libre","");}}>
+                  {Object.keys(BOCOM_STATIONS).map(v=><option key={v}>{v}</option>)}
                 </select>
               </div>
               <div>
-                <div style={{ fontSize: 10, color: C.textLight, marginBottom: 4 }}>Station</div>
-                {isAutreVille ? (
-                  <div style={{ display: "flex" }}>
-                    <div style={{ padding: "9px 12px", background: "#F0F0F0", borderRadius: "8px 0 0 8px", fontSize: 12, fontWeight: 700, color: C.textMid, border: `1.5px solid ${C.border}`, borderRight: "none", whiteSpace: "nowrap" }}>BOCOM</div>
-                    <input style={{ ...inp, borderRadius: "0 8px 8px 0" }} value={form.station_libre} onChange={e => set("station_libre", e.target.value)} placeholder="Nom de la station…" />
+                <div style={{fontSize:10,color:C.textLight,marginBottom:4}}>Station</div>
+                {isAutreVille?(
+                  <div style={{display:"flex"}}>
+                    <div style={{padding:"9px 12px",background:"#F0F0F0",borderRadius:"8px 0 0 8px",fontSize:12,fontWeight:700,color:C.textMid,border:`1.5px solid ${C.border}`,borderRight:"none",whiteSpace:"nowrap"}}>BOCOM</div>
+                    <input style={{...inp,borderRadius:"0 8px 8px 0"}} value={form.station_libre} onChange={e=>set("station_libre",e.target.value)} placeholder="Nom de la station…"/>
                   </div>
-                ) : (
-                  <select style={errors.station ? inpErr : inp} value={form.station} onChange={e => set("station", e.target.value)}>
+                ):(
+                  <select style={errors.station?inpErr:inp} value={form.station} onChange={e=>set("station",e.target.value)}>
                     <option value="">— Choisir —</option>
-                    {stationsVille.map(s => <option key={s}>{s}</option>)}
+                    {stationsVille.map(s=><option key={s}>{s}</option>)}
                   </select>
                 )}
               </div>
             </div>
-            {stationFinale && <div style={{ fontSize: 11, color: C.green, fontWeight: 600, marginTop: 5 }}>✓ {stationFinale}</div>}
-            <FieldError error={errors.station} />
+            {stationFinale&&<div style={{fontSize:11,color:C.green,fontWeight:600,marginTop:5,display:"flex",alignItems:"center",gap:4}}><CheckCircle size={11}/> {stationFinale}</div>}
+            <FieldError error={errors.station}/>
           </div>
 
           {/* Quantité + Prix */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
             <div>
               <label style={lbl}>Litres *</label>
-              <input style={errors.qty ? inpErr : inp} type="number" step="0.1" min="0" value={form.quantity_liters} onChange={e => set("quantity_liters", e.target.value)} placeholder="Ex : 85" />
-              <FieldError error={errors.qty} />
+              <input style={errors.qty?inpErr:inp} type="number" step="0.1" min="0" value={form.quantity_liters} onChange={e=>set("quantity_liters",e.target.value)} placeholder="Ex : 85"/>
+              <FieldError error={errors.qty}/>
             </div>
             <div>
               <label style={lbl}>Prix / litre (FCFA) *</label>
-              <input style={errors.price ? inpErr : inp} type="number" value={form.unit_price} onChange={e => set("unit_price", e.target.value)} placeholder="650" />
-              <FieldError error={errors.price} />
+              <input style={errors.price?inpErr:inp} type="number" value={form.unit_price} onChange={e=>set("unit_price",e.target.value)} placeholder="650"/>
+              <FieldError error={errors.price}/>
             </div>
             <div>
               <label style={lbl}>Total calculé</label>
-              <div style={{ padding: "9px 12px", borderRadius: 8, background: overBudget ? C.redLight : C.greenLight, fontSize: 14, fontWeight: 800, color: overBudget ? C.red : C.green, border: `1.5px solid ${overBudget ? C.red : C.green}20` }}>
-                {total > 0 ? fmtMoney(Math.round(total)) : "—"}
+              <div style={{padding:"9px 12px",borderRadius:8,background:overBudget?C.redLight:C.greenLight,fontSize:14,fontWeight:800,color:overBudget?C.red:C.green,border:`1.5px solid ${overBudget?C.red:C.green}20`}}>
+                {total>0?fmtMoney(Math.round(total)):"—"}
               </div>
-              <FieldError error={errors.budget} />
+              <FieldError error={errors.budget}/>
             </div>
           </div>
 
           {/* Reçu */}
           <div>
             <label style={lbl}>Reçu BOCOM</label>
-            <div onClick={() => fileRef.current?.click()}
-              style={{ border: `2px dashed ${file ? C.green : C.border}`, borderRadius: 10, padding: 14, cursor: "pointer", background: file ? C.greenLight : C.bg, display: "flex", alignItems: "center", gap: 14 }}>
-              <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={e => handleFileChange(e.target.files?.[0])} />
-              {preview ? <img src={preview} alt="aperçu" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8 }} /> : <div style={{ fontSize: 28 }}>{file ? "📄" : "🧾"}</div>}
-              {file ? (
+            <div onClick={()=>fileRef.current?.click()}
+              style={{border:`2px dashed ${file?C.green:C.border}`,borderRadius:10,padding:14,cursor:"pointer",background:file?C.greenLight:C.bg,display:"flex",alignItems:"center",gap:14}}>
+              <input ref={fileRef} type="file" accept="image/*,.pdf" style={{display:"none"}} onChange={e=>handleFileChange(e.target.files?.[0])}/>
+              {preview?<img src={preview} alt="aperçu" style={{width:64,height:64,objectFit:"cover",borderRadius:8}}/>:<FileText size={28} color={file?C.green:C.textLight}/>}
+              {file?(
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>{file.name}</div>
-                  <button onClick={e => { e.stopPropagation(); setFile(null); setPreview(null); }}
-                    style={{ marginTop: 4, fontSize: 10, color: C.red, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>✕ Supprimer</button>
+                  <div style={{fontSize:12,fontWeight:700,color:C.green}}>{file.name}</div>
+                  <button onClick={e=>{e.stopPropagation();setFile(null);setPreview(null);}}
+                    style={{marginTop:4,fontSize:10,color:C.red,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0,display:"flex",alignItems:"center",gap:3}}>
+                    <XCircle size={10}/> Supprimer
+                  </button>
                 </div>
-              ) : (
+              ):(
                 <div>
-                  <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600 }}>Photo ou scan du reçu BOCOM</div>
-                  <div style={{ fontSize: 11, color: C.textLight }}>JPG, PNG, PDF — max 5 Mo</div>
+                  <div style={{fontSize:12,color:C.textMid,fontWeight:600}}>Photo ou scan du reçu BOCOM</div>
+                  <div style={{fontSize:11,color:C.textLight}}>JPG, PNG, PDF — max 5 Mo</div>
                 </div>
               )}
             </div>
@@ -1273,15 +1820,15 @@ function ModalTransaction({ card, reservations, onClose, onSuccess, showToast })
 
           <div>
             <label style={lbl}>Notes (optionnel)</label>
-            <input style={inp} value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Informations complémentaires…" />
+            <input style={inp} value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="Informations complémentaires…"/>
           </div>
         </div>
 
-        <div style={{ padding: "14px 24px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 10, justifyContent: "flex-end", flexShrink: 0 }}>
+        <div style={{padding:"14px 24px",borderTop:`1px solid ${C.border}`,display:"flex",gap:10,justifyContent:"flex-end",flexShrink:0}}>
           <button onClick={onClose} style={ghostBtn}>Annuler</button>
-          <button onClick={handleSubmit} disabled={saving} style={{ ...btn(C.green), opacity: saving ? 0.7 : 1, minWidth: 160 }}>
-            {saving ? <Spinner size={14} color="#fff" /> : null}
-            {saving ? "Enregistrement…" : "⛽ Soumettre la saisie"}
+          <button onClick={handleSubmit} disabled={saving} style={{...btn(C.green),opacity:saving?.7:1,minWidth:160}}>
+            {saving?<Spinner size={14} color="#fff"/>:null}
+            {saving?"Enregistrement…":"Soumettre la saisie"}
           </button>
         </div>
       </div>
@@ -1298,126 +1845,190 @@ function VueChauffeur({ reservations }) {
   const [loading,      setLoading]      = useState(true);
   const [showModal,    setShowModal]    = useState(false);
   const [receiptUrl,   setReceiptUrl]   = useState(null);
-  const [toast,        setToast]        = useState({ msg: "", type: "success" });
+  const [toast,        setToast]        = useState({ msg:"",type:"success" });
   const [page,         setPage]         = useState(1);
+  const [showScan,     setShowScan]     = useState(false);
+  const [showMini,     setShowMini]     = useState(false);
+  const [scannedCard,  setScannedCard]  = useState(null);  // card résolu après scan
   const PAGE_SIZE = 10;
-
-  const showToast = (msg, type = "success") => setToast({ msg, type });
-
-  const load = useCallback(async () => {
+  const showToast=(msg,type="success")=>setToast({msg,type});
+const handleQRFound = useCallback(async (payload) => {
+  try {
+    const cardData = await api(`/cards/${payload.card_id}/`);
+    setScannedCard(cardData);
+    setShowScan(false);
+    setShowMini(true);
+  } catch {
+    showToast("Carte introuvable ou accès refusé.", "error");
+    setShowScan(false);
+  }
+}, []);
+  const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const [c, t] = await Promise.all([
-        api("/cards/my-card/").catch(() => null),
-        api(`/transactions/?page=${page}&page_size=${PAGE_SIZE}`).catch(() => []),
+      const [c,t]=await Promise.all([
+        api("/cards/my-card/").catch(()=>null),
+        api(`/transactions/?page=${page}&page_size=${PAGE_SIZE}`).catch(()=>[]),
       ]);
       setCard(c);
-      setTransactions(Array.isArray(t) ? t : t?.results ?? []);
-    } finally { setLoading(false); }
-  }, [page]);
+      setTransactions(Array.isArray(t)?t:t?.results??[]);
+    } finally{setLoading(false);}
+  },[page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(()=>{load();},[load]);
 
-  if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: 60 }}><Spinner size={28} /></div>;
+  if (loading) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28}/></div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Toast msg={toast.msg} type={toast.type} onDone={() => setToast({ msg: "" })} />
-      {receiptUrl && <ModalReceiptViewer url={receiptUrl} onClose={() => setReceiptUrl(null)} />}
+    
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <style>{`
+  @keyframes spin    { to { transform: rotate(360deg); } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.65} }
+`}</style>
+      <Toast msg={toast.msg} type={toast.type} onDone={()=>setToast({msg:""})}/>
+      {receiptUrl&&<ModalReceiptViewer url={receiptUrl} onClose={()=>setReceiptUrl(null)}/>}
 
-      {!card ? (
-        <div style={{ background: C.white, borderRadius: 12, padding: "40px 20px", textAlign: "center", border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>💳</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Aucune carte carburant assignée</div>
-          <div style={{ fontSize: 12, color: C.textLight, marginTop: 6 }}>Contactez le gestionnaire du parc automobile.</div>
+      {!card?(
+        <div style={{background:C.white,borderRadius:12,padding:"40px 20px",textAlign:"center",border:`1px solid ${C.border}`}}>
+          <CreditCard size={40} color={C.textLight} style={{margin:"0 auto 12px"}}/>
+          <div style={{fontSize:14,fontWeight:700,color:C.text}}>Aucune carte carburant assignée</div>
+          <div style={{fontSize:12,color:C.textLight,marginTop:6}}>Contactez le gestionnaire du parc automobile.</div>
         </div>
-      ) : (
+      ):(
         <>
-          {(card.usage_pct || 0) >= 80 && (
-            <div style={{ background: (card.usage_pct || 0) >= 100 ? C.redLight : C.amberLight, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, border: `1px solid ${(card.usage_pct || 0) >= 100 ? C.red : C.amber}30` }}>
-              <span style={{ fontSize: 20 }}>{(card.usage_pct || 0) >= 100 ? "🔴" : "⚠️"}</span>
+          {(card.usage_pct||0)>=80&&(
+            <div style={{background:(card.usage_pct||0)>=100?C.redLight:C.amberLight,borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,border:`1px solid ${(card.usage_pct||0)>=100?C.red:C.amber}30`}}>
+              {(card.usage_pct||0)>=100?<XCircle size={20} color={C.red}/>:<AlertTriangle size={20} color={C.amber}/>}
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: (card.usage_pct || 0) >= 100 ? C.red : C.amber }}>
-                  {(card.usage_pct || 0) >= 100 ? "Solde épuisé — carte inactive" : `Budget presque épuisé (${fmtPct(card.usage_pct)} utilisé)`}
+                <div style={{fontSize:13,fontWeight:700,color:(card.usage_pct||0)>=100?C.red:C.amber}}>
+                  {(card.usage_pct||0)>=100?"Solde épuisé — carte inactive":`Budget presque épuisé (${fmtPct(card.usage_pct)} utilisé)`}
                 </div>
-                <div style={{ fontSize: 11, color: C.textMid }}>Contactez le gestionnaire pour un rechargement.</div>
+                <div style={{fontSize:11,color:C.textMid}}>Contactez le gestionnaire pour un rechargement.</div>
               </div>
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
-            <CardVisual card={card} selected={false} onClick={() => {}} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,alignItems:"start"}}>
+            <CardVisual card={card} selected={false} onClick={()=>{}}/>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {[
-                { label: "Budget mensuel",   val: fmtMoney(card.monthly_quota),                                    color: C.blue  },
-                { label: "Consommé ce mois", val: fmtMoney(card.monthly_quota - (card.current_balance || 0)),      color: C.amber },
-                { label: "Solde restant",    val: fmtMoney(card.current_balance),                                  color: C.green },
-              ].map((s, i) => (
-                <div key={i} style={{ background: C.white, borderRadius: 10, padding: "12px 16px", border: `1px solid ${C.border}` }}>
-                  <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>{s.label}</div>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: s.color }}>{s.val}</div>
+                {label:"Budget mensuel",   val:fmtMoney(card.monthly_quota),                               color:C.green },
+                {label:"Consommé ce mois", val:fmtMoney(card.monthly_quota-(card.current_balance||0)),     color:C.orange},
+                {label:"Solde restant",    val:fmtMoney(card.current_balance),                             color:C.green },
+              ].map((s,i)=>(
+                <div key={i} style={{background:C.white,borderRadius:10,padding:"12px 16px",border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>{s.label}</div>
+                  <div style={{fontSize:17,fontWeight:800,color:s.color}}>{s.val}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div style={{ background: C.white, borderRadius: 10, padding: "12px 16px", border: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 8 }}>
-              <span style={{ color: C.textMid, fontWeight: 600 }}>Utilisation du budget mensuel</span>
-              <span style={{ fontWeight: 700, color: (card.usage_pct || 0) >= 100 ? C.red : (card.usage_pct || 0) >= 80 ? C.amber : C.green }}>{fmtPct(card.usage_pct)}</span>
+          <div style={{background:C.white,borderRadius:10,padding:"12px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8}}>
+              <span style={{color:C.textMid,fontWeight:600}}>Utilisation du budget mensuel</span>
+              <span style={{fontWeight:700,color:(card.usage_pct||0)>=100?C.red:(card.usage_pct||0)>=80?C.amber:C.green}}>{fmtPct(card.usage_pct)}</span>
             </div>
-            <ProgressBar pct={card.usage_pct} height={8} />
+            <ProgressBar pct={card.usage_pct} height={8}/>
           </div>
 
-          <button onClick={() => setShowModal(true)} disabled={(card.usage_pct || 0) >= 100}
-            style={{ ...btn(C.green), justifyContent: "center", padding: "13px 24px", fontSize: 14, opacity: (card.usage_pct || 0) >= 100 ? 0.5 : 1 }}>
-            ⛽ Saisir une consommation carburant
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+  {/* Bouton principal — scan QR */}
+  <button
+    onClick={() => setShowScan(true)}
+    disabled={(card.usage_pct || 0) >= 100}
+    style={{
+      ...btn(C.green),
+      justifyContent: "center",
+      padding: "14px 24px",
+      fontSize: 15,
+      borderRadius: 12,
+      opacity: (card.usage_pct || 0) >= 100 ? 0.5 : 1,
+    }}
+  >
+    <span style={{ fontSize: 20, marginRight: 4 }}>📷</span>
+    Scanner ma carte BOCOM
+  </button>
+ 
+  {/* Lien fallback — formulaire complet (si caméra indispo) */}
+  <button
+    onClick={() => setShowModal(true)}
+    disabled={(card.usage_pct || 0) >= 100}
+    style={{
+      ...ghostBtn,
+      justifyContent: "center",
+      fontSize: 12,
+      opacity: (card.usage_pct || 0) >= 100 ? 0.5 : 1,
+    }}
+  >
+    <Fuel size={13} /> Saisie manuelle (sans QR)
+  </button>
+</div>
+ 
 
-          {/* Historique */}
-          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Mes saisies carburant</div>
-              <button onClick={() => printTransactionsPDF(transactions, "Mes saisies", "Historique personnel")}
-                style={{ ...ghostBtn, fontSize: 11, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}>🖨️ Imprimer</button>
+          <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text}}>Mes saisies carburant</div>
+              <button onClick={()=>printTransactionsPDF(transactions,"Mes saisies","Historique personnel")}
+                style={{...ghostBtn,fontSize:11,padding:"5px 12px"}}>
+                <Printer size={12}/> Imprimer
+              </button>
             </div>
-            {transactions.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "30px 0", color: C.textLight, fontSize: 13 }}>Aucune saisie enregistrée</div>
-            ) : transactions.map((t, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < transactions.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: C.amberLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>⛽</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{t.quantity_liters}L · {fmtMoney(t.total_amount)}</div>
-                  <div style={{ fontSize: 11, color: C.textLight, marginTop: 1 }}>{fmtDate(t.transaction_date)} · {t.gas_station || "—"}</div>
+            {transactions.length===0?(
+              <div style={{textAlign:"center",padding:"30px 0",color:C.textLight,fontSize:13}}>Aucune saisie enregistrée</div>
+            ):transactions.map((t,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 18px",borderBottom:i<transactions.length-1?`1px solid ${C.border}`:"none"}}>
+                <div style={{width:38,height:38,borderRadius:10,background:C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Fuel size={18} color={C.green}/>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <StatusPill status={t.status} />
-                  {t.status === "REJETE" && t.rejection_reason && (
-                    <div style={{ fontSize: 10, color: C.red, marginTop: 4, maxWidth: 180 }}>{t.rejection_reason}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.text}}>{t.quantity_liters}L · {fmtMoney(t.total_amount)}</div>
+                  <div style={{fontSize:11,color:C.textLight,marginTop:1}}>{fmtDate(t.transaction_date)} · {t.gas_station||"—"}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <StatusPill status={t.status}/>
+                  {t.status==="REJETE"&&t.rejection_reason&&(
+                    <div style={{fontSize:10,color:C.red,marginTop:4,maxWidth:180}}>{t.rejection_reason}</div>
                   )}
-                  {t.receipt_photo_url && (
-                    <button onClick={() => setReceiptUrl(t.receipt_photo_url)}
-                      style={{ fontSize: 10, color: C.blue, background: "none", border: `1px solid ${C.blue}30`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", marginTop: 4, fontFamily: "inherit" }}>
-                      🧾 Voir reçu
+                  {t.receipt_photo_url&&(
+                    <button onClick={()=>setReceiptUrl(t.receipt_photo_url)}
+                      style={{fontSize:10,color:C.green,background:C.greenLight,border:`1px solid ${C.green}30`,borderRadius:5,padding:"2px 7px",cursor:"pointer",marginTop:4,fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                      <Eye size={9}/> Voir reçu
                     </button>
                   )}
                 </div>
               </div>
             ))}
-            {transactions.length === PAGE_SIZE && (
-              <div style={{ padding: "10px 18px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, justifyContent: "center" }}>
-                {page > 1 && <button onClick={() => setPage(p => p - 1)} style={{ ...ghostBtn, fontSize: 11, padding: "5px 12px" }}>← Précédent</button>}
-                <span style={{ fontSize: 11, color: C.textMid, padding: "5px 0" }}>Page {page}</span>
-                <button onClick={() => setPage(p => p + 1)} style={{ ...ghostBtn, fontSize: 11, padding: "5px 12px" }}>Suivant →</button>
+            {transactions.length===PAGE_SIZE&&(
+              <div style={{padding:"10px 18px",borderTop:`1px solid ${C.border}`,display:"flex",gap:8,justifyContent:"center"}}>
+                {page>1&&<button onClick={()=>setPage(p=>p-1)} style={{...ghostBtn,fontSize:11,padding:"5px 12px"}}><ChevronLeft size={13}/> Précédent</button>}
+                <span style={{fontSize:11,color:C.textMid,padding:"5px 0"}}>Page {page}</span>
+                <button onClick={()=>setPage(p=>p+1)} style={{...ghostBtn,fontSize:11,padding:"5px 12px"}}>Suivant <ChevronRight size={13}/></button>
               </div>
             )}
           </div>
         </>
       )}
-
-      {showModal && card && (
-        <ModalTransaction card={card} reservations={reservations || []} onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); load(); }} showToast={showToast} />
+      {showModal&&card&&(
+        <ModalTransaction card={card} reservations={reservations||[]} onClose={()=>setShowModal(false)} onSuccess={()=>{setShowModal(false);load();}} showToast={showToast}/>
       )}
+      {showScan && (
+  <ModalScanQR
+    onFound={handleQRFound}
+    onClose={() => setShowScan(false)}
+    showToast={showToast}
+  />
+)}
+{showMini && scannedCard && (
+  <ModalMiniTransaction
+    card={scannedCard}
+    onClose={() => { setShowMini(false); setScannedCard(null); }}
+    onSuccess={() => { setShowMini(false); setScannedCard(null); load(); }}
+    showToast={showToast}
+  />
+)}
     </div>
   );
 }
@@ -1426,291 +2037,293 @@ function VueChauffeur({ reservations }) {
 // VUE GESTIONNAIRE
 // ════════════════════════════════════════════════════════════════════════════
 function VueGestionnaire() {
-  const [cards,        setCards]        = useState([]);
-  const [dashboard,    setDashboard]    = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [totalTx,      setTotalTx]      = useState(0);
-  const [selCard,      setSelCard]      = useState(null);
-  const [activeTab,    setActiveTab]    = useState("cartes");
-  const [loading,      setLoading]      = useState(true);
-  const [txLoading,    setTxLoading]    = useState(false);
-  const [toast,        setToast]        = useState({ msg: "", type: "success" });
-  const [filterStatus, setFilterStatus] = useState("EN_ATTENTE");
-  const [filterType,   setFilterType]   = useState("");
-  const [searchTx,     setSearchTx]     = useState("");
-  const [showRecharge, setShowRecharge] = useState(false);
-  const [rechargeForm, setRechargeForm] = useState({ amount: "", notes: "" });
+  const [cards,           setCards]         = useState([]);
+  const [dashboard,       setDashboard]     = useState(null);
+  const [transactions,    setTransactions]  = useState([]);
+  const [totalTx,         setTotalTx]       = useState(0);
+  const [selCard,         setSelCard]       = useState(null);
+  const [activeTab,       setActiveTab]     = useState("cartes");
+  const [loading,         setLoading]       = useState(true);
+  const [txLoading,       setTxLoading]     = useState(false);
+  const [toast,           setToast]         = useState({ msg:"",type:"success" });
+  const [filterStatus,    setFilterStatus]  = useState("EN_ATTENTE");
+  const [filterType,      setFilterType]    = useState("");
+  const [searchTx,        setSearchTx]      = useState("");
+  const [qrCard, setQrCard] = useState(null);
+  const [showRecharge,    setShowRecharge]  = useState(false);
+  const [rechargeForm,    setRechargeForm]  = useState({ amount:"",notes:"" });
   const [rechargeHistory, setRechargeHistory] = useState([]);
-  const [cardFormMode, setCardFormMode] = useState(null); // null | "create" | cardObj
-  const [page,         setPage]         = useState(1);
-  const [actioning,    setActioning]    = useState(null);
-  const [rejectModal,  setRejectModal]  = useState(null);
-  const [bulkSelected, setBulkSelected] = useState([]);
-  const [bulkLoading,  setBulkLoading]  = useState(false);
-  const [receiptUrl,   setReceiptUrl]   = useState(null);
-  const [deleteModal,  setDeleteModal]  = useState(null); // null | cardObj
-  const [deleting,     setDeleting]     = useState(false);
+  const [cardFormMode,    setCardFormMode]  = useState(null);
+  const [page,            setPage]          = useState(1);
+  const [actioning,       setActioning]     = useState(null);
+  const [rejectModal,     setRejectModal]   = useState(null);
+  const [bulkSelected,    setBulkSelected]  = useState([]);
+  const [bulkLoading,     setBulkLoading]   = useState(false);
+  const [receiptUrl,      setReceiptUrl]    = useState(null);
+  const [deleteModal,     setDeleteModal]   = useState(null);
+  const [deleting,        setDeleting]      = useState(false);
   const PAGE_SIZE = 15;
   const now = new Date();
+  const showToast=(msg,type="success")=>setToast({msg,type});
 
-  const showToast = (msg, type = "success") => setToast({ msg, type });
-
-  const loadCards = useCallback(async () => {
+  const loadCards=useCallback(async()=>{
     try {
-      const [c, d] = await Promise.all([
-        api("/cards/").catch(() => []),
-        api("/cards/dashboard/").catch(() => null),
+      const [c,d]=await Promise.all([
+        api("/cards/").catch(()=>[]),
+        api("/cards/dashboard/").catch(()=>null),
       ]);
-      setCards(Array.isArray(c) ? c : c?.results ?? []);
+      setCards(Array.isArray(c)?c:c?.results??[]);
       setDashboard(d);
     } catch {}
-  }, []);
+  },[]);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions=useCallback(async()=>{
     setTxLoading(true);
     try {
-      const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
-      if (filterStatus) params.append("status", filterStatus);
-      if (filterType)   params.append("transaction_type", filterType);
-      if (searchTx)     params.append("search", searchTx);
-      const t = await api(`/transactions/?${params}`).catch(() => []);
-      const list = Array.isArray(t) ? t : t?.results ?? [];
+      const params=new URLSearchParams({page,page_size:PAGE_SIZE});
+      if (filterStatus) params.append("status",filterStatus);
+      if (filterType)   params.append("transaction_type",filterType);
+      if (searchTx)     params.append("search",searchTx);
+      const t=await api(`/transactions/?${params}`).catch(()=>[]);
+      const list=Array.isArray(t)?t:t?.results??[];
       setTransactions(list);
-      setTotalTx(t?.count || list.length);
-    } finally { setTxLoading(false); }
-  }, [filterStatus, filterType, searchTx, page]);
+      setTotalTx(t?.count||list.length);
+    } finally{setTxLoading(false);}
+  },[filterStatus,filterType,searchTx,page]);
 
-  useEffect(() => {
+  useEffect(()=>{
     setLoading(true);
-    Promise.all([loadCards(), loadTransactions()]).finally(() => setLoading(false));
-  }, []);
+    Promise.all([loadCards(),loadTransactions()]).finally(()=>setLoading(false));
+  },[]);
+  useEffect(()=>{if(activeTab==="transactions"){setPage(1);loadTransactions();}},[filterStatus,filterType]);
+  useEffect(()=>{if(activeTab==="transactions")loadTransactions();},[page]);
+  useEffect(()=>{
+    if (activeTab!=="transactions") return;
+    const t=setTimeout(()=>{setPage(1);loadTransactions();},350);
+    return ()=>clearTimeout(t);
+  },[searchTx]);
 
-  useEffect(() => { if (activeTab === "transactions") { setPage(1); loadTransactions(); } }, [filterStatus, filterType]);
-  useEffect(() => { if (activeTab === "transactions") loadTransactions(); }, [page]);
-  useEffect(() => {
-    if (activeTab !== "transactions") return;
-    const t = setTimeout(() => { setPage(1); loadTransactions(); }, 350);
-    return () => clearTimeout(t);
-  }, [searchTx]);
-
-  const handleValider = async (txId) => {
+  const handleValider=async(txId)=>{
     setActioning(txId);
     try {
-      await api(`/transactions/${txId}/valider/`, { method: "POST", body: JSON.stringify({ action: "VALIDE" }) });
+      await api(`/transactions/${txId}/valider/`,{method:"POST",body:JSON.stringify({action:"VALIDE"})});
       showToast("Transaction validée ✓");
-      loadTransactions(); loadCards();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setActioning(null); }
+      loadTransactions();loadCards();
+    } catch(e){showToast(e.message,"error");}
+    finally{setActioning(null);}
   };
-
-  const handleRejeter = async (txId, reason) => {
+  const handleRejeter=async(txId,reason)=>{
     setActioning(txId);
     try {
-      await api(`/transactions/${txId}/valider/`, { method: "POST", body: JSON.stringify({ action: "REJETE", reason }) });
+      await api(`/transactions/${txId}/valider/`,{method:"POST",body:JSON.stringify({action:"REJETE",reason})});
       showToast("Transaction rejetée");
-      setRejectModal(null);
-      loadTransactions();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setActioning(null); }
+      setRejectModal(null);loadTransactions();
+    } catch(e){showToast(e.message,"error");}
+    finally{setActioning(null);}
   };
-
-  const handleBulkValider = async () => {
+  const handleBulkValider=async()=>{
     if (!bulkSelected.length) return;
     setBulkLoading(true);
     try {
-      await Promise.all(bulkSelected.map(id =>
-        api(`/transactions/${id}/valider/`, { method: "POST", body: JSON.stringify({ action: "VALIDE" }) })
-      ));
+      await Promise.all(bulkSelected.map(id=>api(`/transactions/${id}/valider/`,{method:"POST",body:JSON.stringify({action:"VALIDE"})})));
       showToast(`${bulkSelected.length} transaction(s) validée(s) ✓`);
-      setBulkSelected([]);
-      loadTransactions(); loadCards();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setBulkLoading(false); }
+      setBulkSelected([]);loadTransactions();loadCards();
+    } catch(e){showToast(e.message,"error");}
+    finally{setBulkLoading(false);}
   };
-
-  const handleRecharge = async () => {
-    if (!selCard || !rechargeForm.amount) { showToast("Montant requis", "error"); return; }
+  const handleRecharge=async()=>{
+    if (!selCard||!rechargeForm.amount){showToast("Montant requis","error");return;}
     try {
-      await api(`/cards/${selCard.id}/recharge/`, {
-        method: "POST",
-        body: JSON.stringify({ month: now.getMonth() + 1, year: now.getFullYear(), allocated_amount: rechargeForm.amount, notes: rechargeForm.notes }),
-      });
+      await api(`/cards/${selCard.id}/recharge/`,{method:"POST",body:JSON.stringify({month:now.getMonth()+1,year:now.getFullYear(),allocated_amount:rechargeForm.amount,notes:rechargeForm.notes})});
       showToast("Carte rechargée ✓");
-      setShowRecharge(false);
-      setRechargeForm({ amount: "", notes: "" });
-      loadCards();
-    } catch (e) { showToast(e.message, "error"); }
+      setShowRecharge(false);setRechargeForm({amount:"",notes:""});loadCards();
+    } catch(e){showToast(e.message,"error");}
   };
-
-  const handleDeleteCard = async () => {
+  const handleDeleteCard=async()=>{
     if (!deleteModal) return;
     setDeleting(true);
     try {
-      await api(`/cards/${deleteModal.id}/`, { method: "DELETE" });
+      await api(`/cards/${deleteModal.id}/`,{method:"DELETE"});
       showToast("Carte supprimée");
-      setDeleteModal(null);
-      setSelCard(null);
-      loadCards();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setDeleting(false); }
+      setDeleteModal(null);setSelCard(null);loadCards();
+    } catch(e){showToast(e.message,"error");}
+    finally{setDeleting(false);}
   };
-
-  const loadRechargeHistory = async (cardId) => {
+  const loadRechargeHistory=async(cardId)=>{
     try {
-      const h = await api(`/cards/${cardId}/recharges/`).catch(() => []);
-      setRechargeHistory(Array.isArray(h) ? h : h?.results ?? []);
-    } catch { setRechargeHistory([]); }
+      const h=await api(`/cards/${cardId}/recharges/`).catch(()=>[]);
+      setRechargeHistory(Array.isArray(h)?h:h?.results??[]);
+    } catch{setRechargeHistory([]);}
   };
 
-  const alertCards   = cards.filter(c => (c.usage_pct || 0) >= 80);
-  const pendingCount = transactions.filter(t => t.status === "EN_ATTENTE").length;
-  const totalPages   = Math.ceil(totalTx / PAGE_SIZE);
+  const alertCards   = cards.filter(c=>(c.usage_pct||0)>=80);
+  const pendingCount = transactions.filter(t=>t.status==="EN_ATTENTE").length;
+  const totalPages   = Math.ceil(totalTx/PAGE_SIZE);
 
   const TABS = [
-    { id: "cartes",       label: "Cartes",       icon: "💳", badge: alertCards.length, badgeColor: C.amber },
-    { id: "transactions", label: "Transactions", icon: "⛽", badge: pendingCount,      badgeColor: C.red   },
-    { id: "stats",        label: "Statistiques", icon: "📊" },
+    {id:"cartes",       label:"Cartes",       Icon:CreditCard, badge:alertCards.length,  badgeColor:C.amber},
+    {id:"transactions", label:"Transactions", Icon:Fuel,       badge:pendingCount,        badgeColor:C.red  },
+    {id:"stats",        label:"Statistiques", Icon:BarChart2,  badge:0                                      },
   ];
 
-  if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: 60 }}><Spinner size={28} /></div>;
+  if (loading) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28}/></div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <style>{`
         @keyframes spin    { to { transform: rotate(360deg); } }
         @keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.65} }
       `}</style>
-      <Toast msg={toast.msg} type={toast.type} onDone={() => setToast({ msg: "" })} />
-      {receiptUrl && <ModalReceiptViewer url={receiptUrl} onClose={() => setReceiptUrl(null)} />}
-      {deleteModal && (
+      <Toast msg={toast.msg} type={toast.type} onDone={()=>setToast({msg:""})}/>
+      {receiptUrl&&<ModalReceiptViewer url={receiptUrl} onClose={()=>setReceiptUrl(null)}/>}
+      {deleteModal&&(
         <ModalConfirmDelete
-          label={`${deleteModal.card_network} · ${deleteModal.vehicle_info?.registration_number || deleteModal.card_number_masked}`}
-          onClose={() => setDeleteModal(null)}
-          onConfirm={handleDeleteCard}
-          loading={deleting}
-        />
+          label={`BOCOM · ${deleteModal.vehicle_info?.registration_number||deleteModal.card_number_masked}`}
+          onClose={()=>setDeleteModal(null)} onConfirm={handleDeleteCard} loading={deleting}/>
       )}
 
       {/* Alertes globales */}
-      {alertCards.length > 0 && (
-        <div style={{ background: C.amberLight, borderRadius: 10, padding: "10px 16px", border: `1px solid ${C.amber}30`, display: "flex", alignItems: "center", gap: 10 }}>
-          <span>⚠️</span>
-          <div style={{ flex: 1 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.amber }}>{alertCards.length} carte(s) à surveiller : </span>
-            <span style={{ fontSize: 12, color: C.textMid }}>
-              {alertCards.map(c => `${c.vehicle_info?.registration_number || "—"} (${Math.round(c.usage_pct || 0)}%)`).join(" · ")}
-            </span>
+      {alertCards.length>0&&(
+        <div style={{background:C.amberLight,borderRadius:10,padding:"10px 16px",border:`1px solid ${C.amber}30`,display:"flex",alignItems:"center",gap:10}}>
+          <AlertTriangle size={16} color={C.amber}/>
+          <div style={{flex:1}}>
+            <span style={{fontSize:12,fontWeight:700,color:C.amber}}>{alertCards.length} carte(s) à surveiller : </span>
+            <span style={{fontSize:12,color:C.textMid}}>{alertCards.map(c=>`${c.vehicle_info?.registration_number||"—"} (${Math.round(c.usage_pct||0)}%)`).join(" · ")}</span>
           </div>
-          <button onClick={() => setActiveTab("cartes")} style={{ fontSize: 11, color: C.amber, background: "none", border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+          <button onClick={()=>setActiveTab("cartes")} style={{fontSize:11,color:C.amber,background:"none",border:`1px solid ${C.amber}40`,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
             Voir →
           </button>
         </div>
       )}
 
       {/* KPIs */}
-      {dashboard && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+      {dashboard&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
           {[
-            { label: "Budget mensuel total",  val: fmtMoney(dashboard.budget_total),   color: C.blue,  icon: "💰" },
-            { label: "Consommé ce mois",      val: fmtMoney(dashboard.consumed_total), color: C.amber, icon: "⛽",
-              sub: `${fmtPct(dashboard.usage_pct)} du budget`, subColor: (dashboard.usage_pct || 0) > 85 ? C.red : C.amber },
-            { label: "Cartes actives",        val: `${dashboard.active_cards} / ${dashboard.total_cards}`, color: C.green, icon: "💳" },
-            { label: "Saisies en attente",    val: dashboard.pending_transactions, color: dashboard.pending_transactions > 0 ? C.red : C.textLight, icon: "📋" },
-          ].map((k, i) => (
-            <div key={i} style={{ background: C.white, borderRadius: 12, padding: "14px 16px", border: `1px solid ${C.border}`, borderTop: `3px solid ${k.color}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.textLight, textTransform: "uppercase", letterSpacing: "1px" }}>{k.label}</div>
-                <span style={{ fontSize: 16 }}>{k.icon}</span>
+            {label:"Budget mensuel total",  val:fmtMoney(dashboard.budget_total),   color:C.green,  Icon:Wallet  },
+            {label:"Consommé ce mois",      val:fmtMoney(dashboard.consumed_total), color:C.orange, Icon:Fuel,
+             sub:`${fmtPct(dashboard.usage_pct)} du budget`, subColor:(dashboard.usage_pct||0)>85?C.red:C.orange},
+            {label:"Cartes actives",        val:`${dashboard.active_cards} / ${dashboard.total_cards}`, color:C.green,  Icon:CreditCard},
+            {label:"Saisies en attente",    val:dashboard.pending_transactions, color:dashboard.pending_transactions>0?C.red:C.textLight, Icon:Clock},
+          ].map((k,i)=>{
+            const Icon=k.Icon;
+            return (
+              <div key={i} style={{background:C.white,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.border}`,borderTop:`3px solid ${k.color}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"1px"}}>{k.label}</div>
+                  <Icon size={14} color={k.color}/>
+                </div>
+                <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.val}</div>
+                {k.sub&&<div style={{fontSize:10,color:k.subColor||C.textLight,marginTop:4,fontWeight:600}}>{k.sub}</div>}
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.val}</div>
-              {k.sub && <div style={{ fontSize: 10, color: k.subColor || C.textLight, marginTop: 4, fontWeight: 600 }}>{k.sub}</div>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 6, background: C.bg, padding: 5, borderRadius: 10, border: `1px solid ${C.border}` }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => {
-            setActiveTab(t.id);
-            if (t.id === "transactions" || t.id === "stats") loadTransactions();
-          }}
-            style={{ flex: 1, padding: "8px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none",
-              background: activeTab === t.id ? C.white : "transparent", color: activeTab === t.id ? C.green : C.textMid,
-              boxShadow: activeTab === t.id ? "0 1px 4px rgba(0,0,0,.08)" : "none",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-            {t.icon} {t.label}
-            {(t.badge || 0) > 0 && (
-              <span style={{ background: t.badgeColor || C.red, color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 800, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
-                {t.badge}
-              </span>
-            )}
-          </button>
-        ))}
+      <div style={{display:"flex",gap:6,background:C.bg,padding:5,borderRadius:10,border:`1px solid ${C.border}`}}>
+        {TABS.map(t=>{
+          const Icon=t.Icon;
+          return (
+            <button key={t.id} onClick={()=>{setActiveTab(t.id);if(t.id==="transactions"||t.id==="stats")loadTransactions();}}
+              style={{flex:1,padding:"8px 14px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"none",
+                background:activeTab===t.id?C.white:"transparent",color:activeTab===t.id?C.green:C.textMid,
+                boxShadow:activeTab===t.id?"0 1px 4px rgba(0,0,0,.08)":"none",
+                display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <Icon size={13}/> {t.label}
+              {(t.badge||0)>0&&(
+                <span style={{background:t.badgeColor||C.red,color:"#fff",borderRadius:99,fontSize:9,fontWeight:800,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ════ CARTES ════ */}
-      {activeTab === "cartes" && (
+      {activeTab==="cartes"&&(
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 12, color: C.textLight }}>{cards.length} carte{cards.length > 1 ? "s" : ""} enregistrée{cards.length > 1 ? "s" : ""}</div>
-            <button onClick={() => setCardFormMode("create")} style={btn(C.green)}>+ Créer une carte</button>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontSize:12,color:C.textLight}}>{cards.length} carte{cards.length>1?"s":""} enregistrée{cards.length>1?"s":""}</div>
+            <button onClick={()=>setCardFormMode("create")} style={btn(C.green)}>
+              <Plus size={15}/> Créer une carte
+            </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
-            {cards.map(c => (
-              <CardVisual key={c.id} card={c} selected={selCard?.id === c.id}
-                onClick={() => { setSelCard(selCard?.id === c.id ? null : c); if (selCard?.id !== c.id) loadRechargeHistory(c.id); }} />
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
+            {cards.map(c=>(
+              <CardVisual key={c.id} card={c} selected={selCard?.id===c.id}
+                onClick={() => {
+  console.log("carte cliquée :", c.id, c.vehicle_info?.registration_number);
+  if (selCard?.id === c.id) {
+    setSelCard(null);
+  } else {
+    setSelCard(c);
+    loadRechargeHistory(c.id);
+  }
+}}/>
             ))}
           </div>
 
-          {selCard && (
-            <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          {selCard&&(
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+              <div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>BOCOM · {selCard.vehicle_info?.make} {selCard.vehicle_info?.model}</div>
-                  <div style={{ fontSize: 11, color: C.textLight, marginTop: 2 }}>{selCard.vehicle_info?.registration_number} · {selCard.card_number_masked}</div>
-                  {selCard.vehicle_info?.assigned_driver && <div style={{ fontSize: 12, color: C.textMid, marginTop: 4 }}>👤 {selCard.vehicle_info.assigned_driver}</div>}
+                  <div style={{fontSize:14,fontWeight:800,color:C.text}}>BOCOM · {selCard.vehicle_info?.make} {selCard.vehicle_info?.model}</div>
+                  <div style={{fontSize:11,color:C.textLight,marginTop:2}}>{selCard.vehicle_info?.registration_number} · {selCard.card_number_masked}</div>
+                  {selCard.vehicle_info?.assigned_driver&&(
+                    <div style={{fontSize:12,color:C.textMid,marginTop:4,display:"flex",alignItems:"center",gap:4}}>
+                      <Users size={11}/> {selCard.vehicle_info.assigned_driver}
+                    </div>
+                  )}
                 </div>
-                {/* Actions : Recharger + Modifier + Supprimer */}
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button onClick={() => setShowRecharge(true)} style={btn(C.green)}>💳 Recharger</button>
-                  <button onClick={() => setCardFormMode(selCard)}
-                    style={{ ...ghostBtn, display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "8px 14px" }}>
-                    ✏️ Modifier
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <button onClick={()=>setShowRecharge(true)} style={btn(C.green)}>
+                    <RefreshCw size={13}/> Recharger
                   </button>
-                  <button onClick={() => setDeleteModal(selCard)}
-                    style={{ ...ghostBtn, color: C.red, borderColor: `${C.red}50`, display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "8px 14px" }}>
-                    🗑️ Supprimer
+                 <button
+  onClick={() => {
+    const snap = cards.find(c => c.id === selCard.id);
+    console.log("QR ouvert pour :", snap?.id);
+    setQrCard(snap ? {...snap} : {...selCard});
+  }}
+  style={{ ...ghostBtn, padding: "8px 14px" }}
+>
+  <span style={{ fontSize: 14, marginRight: 4 }}>⬛</span> QR Code
+</button>
+                  <button onClick={()=>setCardFormMode(selCard)} style={{...ghostBtn,padding:"8px 14px"}}>
+                    <Pencil size={13}/> Modifier
+                  </button>
+                  <button onClick={()=>setDeleteModal(selCard)} style={{...ghostBtn,color:C.red,borderColor:`${C.red}50`,padding:"8px 14px"}}>
+                    <Trash2 size={13}/> Supprimer
                   </button>
                 </div>
               </div>
-
-              <div style={{ padding: "14px 20px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 12 }}>
+              <div style={{padding:"14px 20px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
                   {[
-                    { label: "Quota mensuel",    val: fmtMoney(selCard.monthly_quota),                                   color: C.blue  },
-                    { label: "Consommé ce mois", val: fmtMoney(selCard.monthly_quota - (selCard.current_balance || 0)),  color: C.amber },
-                    { label: "Solde disponible", val: fmtMoney(selCard.current_balance),                                 color: C.green },
-                  ].map((f, i) => (
-                    <div key={i} style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 9, color: C.textLight, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>{f.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: f.color }}>{f.val}</div>
+                    {label:"Quota mensuel",    val:fmtMoney(selCard.monthly_quota),                              color:C.green },
+                    {label:"Consommé ce mois", val:fmtMoney(selCard.monthly_quota-(selCard.current_balance||0)), color:C.orange},
+                    {label:"Solde disponible", val:fmtMoney(selCard.current_balance),                            color:C.green },
+                  ].map((f,i)=>(
+                    <div key={i} style={{background:C.bg,borderRadius:8,padding:"10px 12px"}}>
+                      <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>{f.label}</div>
+                      <div style={{fontSize:14,fontWeight:800,color:f.color}}>{f.val}</div>
                     </div>
                   ))}
                 </div>
-                <ProgressBar pct={selCard.usage_pct} height={8} />
-                <div style={{ fontSize: 10, color: C.textLight, marginTop: 4 }}>{fmtPct(selCard.usage_pct)} du budget utilisé</div>
-
-                {rechargeHistory.length > 0 && (
-                  <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 10 }}>Historique des rechargements</div>
-                    {rechargeHistory.slice(0, 6).map((r, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < Math.min(rechargeHistory.length, 6) - 1 ? `1px solid ${C.border}` : "none" }}>
-                        <div style={{ fontSize: 11, color: C.textMid }}>{fmtDate(r.created_at)} · {r.notes || "Rechargement standard"}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: C.green }}>{fmtMoney(r.allocated_amount)}</div>
+                <ProgressBar pct={selCard.usage_pct} height={8}/>
+                <div style={{fontSize:10,color:C.textLight,marginTop:4}}>{fmtPct(selCard.usage_pct)} du budget utilisé</div>
+                {rechargeHistory.length>0&&(
+                  <div style={{marginTop:14,borderTop:`1px solid ${C.border}`,paddingTop:14}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Historique des rechargements</div>
+                    {rechargeHistory.slice(0,6).map((r,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<Math.min(rechargeHistory.length,6)-1?`1px solid ${C.border}`:"none"}}>
+                        <div style={{fontSize:11,color:C.textMid}}>{fmtDate(r.created_at)} · {r.notes||"Rechargement standard"}</div>
+                        <div style={{fontSize:11,fontWeight:700,color:C.green}}>{fmtMoney(r.allocated_amount)}</div>
                       </div>
                     ))}
                   </div>
@@ -1720,36 +2333,38 @@ function VueGestionnaire() {
           )}
 
           {/* Modal recharge */}
-          {showRecharge && selCard && (
-            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-              <div style={{ background: C.white, borderRadius: 14, padding: 28, width: 480, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>Recharger la carte</div>
-                <div style={{ fontSize: 12, color: C.textLight, marginBottom: 20 }}>
+          {showRecharge&&selCard&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+              <div style={{background:C.white,borderRadius:14,padding:28,width:480,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+                <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:4}}>Recharger la carte</div>
+                <div style={{fontSize:12,color:C.textLight,marginBottom:20}}>
                   BOCOM · {selCard.vehicle_info?.registration_number} · {MOIS[now.getMonth()]} {now.getFullYear()}
                 </div>
-                <div style={{ marginBottom: 12 }}>
+                <div style={{marginBottom:12}}>
                   <label style={lbl}>Montant à allouer (FCFA) *</label>
                   <input style={inp} type="number" value={rechargeForm.amount}
-                    onChange={e => setRechargeForm(f => ({ ...f, amount: e.target.value }))}
-                    placeholder={`Quota par défaut : ${Number(selCard.monthly_quota || 0).toLocaleString("fr-FR")} FCFA`} />
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    {[selCard.monthly_quota, Math.round(selCard.monthly_quota * 0.75), Math.round(selCard.monthly_quota * 0.5)].map(v => (
-                      <button key={v} onClick={() => setRechargeForm(f => ({ ...f, amount: v }))} type="button"
-                        style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                          border: `1px solid ${C.border}`, background: rechargeForm.amount == v ? C.greenLight : C.bg, color: rechargeForm.amount == v ? C.green : C.textMid }}>
+                    onChange={e=>setRechargeForm(f=>({...f,amount:e.target.value}))}
+                    placeholder={`Quota par défaut : ${Number(selCard.monthly_quota||0).toLocaleString("fr-FR")} FCFA`}/>
+                  <div style={{display:"flex",gap:8,marginTop:8}}>
+                    {[selCard.monthly_quota,Math.round(selCard.monthly_quota*.75),Math.round(selCard.monthly_quota*.5)].map(v=>(
+                      <button key={v} onClick={()=>setRechargeForm(f=>({...f,amount:v}))} type="button"
+                        style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                          border:`1px solid ${C.border}`,background:rechargeForm.amount==v?C.greenLight:C.bg,color:rechargeForm.amount==v?C.green:C.textMid}}>
                         {Number(v).toLocaleString("fr-FR")}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div style={{ marginBottom: 20 }}>
+                <div style={{marginBottom:20}}>
                   <label style={lbl}>Notes</label>
-                  <input style={inp} value={rechargeForm.notes} onChange={e => setRechargeForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder={`Ex : Recharge standard BOCOM — ${MOIS[now.getMonth()]} ${now.getFullYear()}`} />
+                  <input style={inp} value={rechargeForm.notes} onChange={e=>setRechargeForm(f=>({...f,notes:e.target.value}))}
+                    placeholder={`Ex : Recharge standard BOCOM — ${MOIS[now.getMonth()]} ${now.getFullYear()}`}/>
                 </div>
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                  <button onClick={() => setShowRecharge(false)} style={ghostBtn}>Annuler</button>
-                  <button onClick={handleRecharge} style={btn(C.green)}>Confirmer la recharge</button>
+                <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                  <button onClick={()=>setShowRecharge(false)} style={ghostBtn}>Annuler</button>
+                  <button onClick={handleRecharge} style={btn(C.green)}>
+                    <CheckCircle size={14}/> Confirmer la recharge
+                  </button>
                 </div>
               </div>
             </div>
@@ -1758,99 +2373,104 @@ function VueGestionnaire() {
       )}
 
       {/* ════ TRANSACTIONS ════ */}
-      {activeTab === "transactions" && (
+      {activeTab==="transactions"&&(
         <>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 6, background: C.bg, padding: 4, borderRadius: 8, border: `1px solid ${C.border}` }}>
-              {[["EN_ATTENTE","⏳ En attente"], ["VALIDE","✓ Validées"], ["REJETE","✗ Rejetées"], ["","Toutes"]].map(([v, l]) => (
-                <button key={v} onClick={() => { setFilterStatus(v); setPage(1); }}
-                  style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none",
-                    background: filterStatus === v ? C.white : "transparent", color: filterStatus === v ? C.green : C.textMid,
-                    boxShadow: filterStatus === v ? "0 1px 4px rgba(0,0,0,.08)" : "none" }}>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{display:"flex",gap:6,background:C.bg,padding:4,borderRadius:8,border:`1px solid ${C.border}`}}>
+              {[["EN_ATTENTE","En attente"],["VALIDE","Validées"],["REJETE","Rejetées"],["","Toutes"]].map(([v,l])=>(
+                <button key={v} onClick={()=>{setFilterStatus(v);setPage(1);}}
+                  style={{padding:"5px 12px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"none",
+                    background:filterStatus===v?C.white:"transparent",color:filterStatus===v?C.green:C.textMid,
+                    boxShadow:filterStatus===v?"0 1px 4px rgba(0,0,0,.08)":"none"}}>
                   {l}
                 </button>
               ))}
             </div>
-            <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(1); }}
-              style={{ ...inp, width: "auto", padding: "6px 10px", fontSize: 11 }}>
+            <select value={filterType} onChange={e=>{setFilterType(e.target.value);setPage(1);}}
+              style={{...inp,width:"auto",padding:"6px 10px",fontSize:11}}>
               <option value="">Tous types</option>
-              <option value="RAMASSAGE">🚌 Ramassage</option>
-              <option value="MISSION">🗺️ Mission</option>
+              <option value="RAMASSAGE">Ramassage</option>
+              <option value="MISSION">Mission</option>
             </select>
-            <input value={searchTx} onChange={e => setSearchTx(e.target.value)} placeholder="🔍 Chauffeur, véhicule, station…"
-              style={{ ...inp, width: 220, padding: "6px 12px", fontSize: 12 }} />
-            <div style={{ flex: 1 }} />
-            {bulkSelected.length > 0 && (
+            <input value={searchTx} onChange={e=>setSearchTx(e.target.value)} placeholder="Rechercher chauffeur, véhicule…"
+              style={{...inp,width:220,padding:"6px 12px",fontSize:12}}/>
+            <div style={{flex:1}}/>
+            {bulkSelected.length>0&&(
               <button onClick={handleBulkValider} disabled={bulkLoading}
-                style={{ ...btn(C.green), opacity: bulkLoading ? 0.7 : 1, fontSize: 12 }}>
-                {bulkLoading ? <Spinner size={13} color="#fff" /> : null}
-                ✓ Valider ({bulkSelected.length})
+                style={{...btn(C.green),opacity:bulkLoading?.7:1,fontSize:12}}>
+                {bulkLoading?<Spinner size={13} color="#fff"/>:<CheckCircle size={13}/>}
+                Valider ({bulkSelected.length})
               </button>
             )}
-            <button onClick={() => printTransactionsPDF(transactions, filterStatus || "Toutes", `${MOIS[now.getMonth()]} ${now.getFullYear()}`)}
-              style={{ ...ghostBtn, fontSize: 11, padding: "6px 14px", display: "flex", alignItems: "center", gap: 5 }}>🖨️ Imprimer</button>
+            <button onClick={()=>printTransactionsPDF(transactions,filterStatus||"Toutes",`${MOIS[now.getMonth()]} ${now.getFullYear()}`)}
+              style={{...ghostBtn,fontSize:11,padding:"6px 14px"}}>
+              <Printer size={12}/> Imprimer
+            </button>
           </div>
 
-          {totalTx > 0 && <div style={{ fontSize: 11, color: C.textLight }}>{totalTx} transaction(s) · page {page}/{totalPages || 1}</div>}
+          {totalTx>0&&<div style={{fontSize:11,color:C.textLight}}>{totalTx} transaction(s) · page {page}/{totalPages||1}</div>}
 
-          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-            {txLoading ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: 40 }}><Spinner size={24} /></div>
-            ) : transactions.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: C.textLight }}>
-                <div style={{ fontSize: 30, marginBottom: 8 }}>✅</div>
-                <div style={{ fontSize: 13 }}>Aucune transaction</div>
+          <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+            {txLoading?(
+              <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24}/></div>
+            ):transactions.length===0?(
+              <div style={{textAlign:"center",padding:"40px 0",color:C.textLight}}>
+                <CheckCircle size={30} color={C.green} style={{margin:"0 auto 8px"}}/>
+                <div style={{fontSize:13}}>Aucune transaction</div>
               </div>
-            ) : transactions.map((t, i) => {
-              const isSelected  = bulkSelected.includes(t.id);
-              const isActioning = actioning === t.id;
+            ):transactions.map((t,i)=>{
+              const isSelected=bulkSelected.includes(t.id);
+              const isActioning2=actioning===t.id;
               return (
                 <div key={t.id} style={{
-                  padding: "12px 18px", borderBottom: i < transactions.length - 1 ? `1px solid ${C.border}` : "none",
-                  display: "flex", alignItems: "center", gap: 12, opacity: isActioning ? 0.6 : 1,
-                  background: isSelected ? C.greenXLight : "transparent",
+                  padding:"12px 18px",borderBottom:i<transactions.length-1?`1px solid ${C.border}`:"none",
+                  display:"flex",alignItems:"center",gap:12,opacity:isActioning2?.6:1,
+                  background:isSelected?C.greenXLight:"transparent",
                 }}>
-                  {t.status === "EN_ATTENTE" ? (
+                  {t.status==="EN_ATTENTE"?(
                     <input type="checkbox" checked={isSelected}
-                      onChange={e => setBulkSelected(prev => e.target.checked ? [...prev, t.id] : prev.filter(id => id !== t.id))}
-                      style={{ width: 15, height: 15, cursor: "pointer", flexShrink: 0, accentColor: C.green }} />
-                  ) : <div style={{ width: 15, flexShrink: 0 }} />}
-
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: C.amberLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>⛽</div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{t.driver_name} · {t.vehicle_name}</span>
-                      <StatusPill status={t.status} />
-                      <span style={{ fontSize: 10, color: C.textLight, background: C.bg, padding: "1px 7px", borderRadius: 99 }}>
-                        {t.transaction_type === "RAMASSAGE" ? "🚌 Ramassage" : "🗺️ Mission"}
+                      onChange={e=>setBulkSelected(prev=>e.target.checked?[...prev,t.id]:prev.filter(id=>id!==t.id))}
+                      style={{width:15,height:15,cursor:"pointer",flexShrink:0,accentColor:C.green}}/>
+                  ):<div style={{width:15,flexShrink:0}}/>}
+                  <div style={{width:40,height:40,borderRadius:10,background:C.greenLight,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Fuel size={18} color={C.green}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:C.text}}>{t.driver_name} · {t.vehicle_name}</span>
+                      <StatusPill status={t.status}/>
+                      <span style={{fontSize:10,color:C.textLight,background:C.bg,padding:"1px 7px",borderRadius:99}}>
+                        {t.transaction_type==="RAMASSAGE"?"Ramassage":"Mission"}
                       </span>
                     </div>
-                    <div style={{ fontSize: 11, color: C.textMid }}>
+                    <div style={{fontSize:11,color:C.textMid}}>
                       {t.quantity_liters}L · {fmtMoney(t.total_amount)} · {fmtDT(t.transaction_date)}
-                      {t.gas_station && ` · ${t.gas_station}`}
+                      {t.gas_station&&` · ${t.gas_station}`}
                     </div>
-                    {t.status === "REJETE" && t.rejection_reason && (
-                      <div style={{ fontSize: 10, color: C.red, marginTop: 3 }}>Motif : {t.rejection_reason}</div>
+                    {t.status==="REJETE"&&t.rejection_reason&&(
+                      <div style={{fontSize:10,color:C.red,marginTop:3,display:"flex",alignItems:"center",gap:3}}>
+                        <AlertTriangle size={9}/> {t.rejection_reason}
+                      </div>
                     )}
                   </div>
-
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                    {/* Reçu — viewer interne */}
-                    {t.receipt_photo_url && (
-                      <button onClick={() => setReceiptUrl(t.receipt_photo_url)}
-                        style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}20`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>
-                        🧾 Reçu
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                    {t.receipt_photo_url&&(
+                      <button onClick={()=>setReceiptUrl(t.receipt_photo_url)}
+                        style={{...ghostBtn,fontSize:11,padding:"4px 10px",color:C.green,borderColor:`${C.green}40`}}>
+                        <Eye size={11}/> Reçu
                       </button>
                     )}
-                    {t.status === "EN_ATTENTE" && (
+                    {t.status==="EN_ATTENTE"&&(
                       <>
-                        <button onClick={() => handleValider(t.id)} disabled={isActioning}
-                          style={{ ...btn(C.green), padding: "5px 12px", fontSize: 11, minWidth: 80, opacity: isActioning ? 0.6 : 1 }}>
-                          {isActioning ? <Spinner size={12} color="#fff" /> : "✓ Valider"}
+                        <button onClick={()=>handleValider(t.id)} disabled={isActioning2}
+                          style={{...btn(C.green),padding:"5px 12px",fontSize:11,minWidth:80,opacity:isActioning2?.6:1}}>
+                          {isActioning2?<Spinner size={12} color="#fff"/>:<CheckCircle size={12}/>}
+                          Valider
                         </button>
-                        <button onClick={() => setRejectModal(t.id)} disabled={isActioning}
-                          style={{ ...ghostBtn, color: C.red, borderColor: `${C.red}50`, padding: "5px 10px", fontSize: 11 }}>✕</button>
+                        <button onClick={()=>setRejectModal(t.id)} disabled={isActioning2}
+                          style={{...ghostBtn,color:C.red,borderColor:`${C.red}50`,padding:"5px 10px",fontSize:11}}>
+                          <XCircle size={12}/>
+                        </button>
                       </>
                     )}
                   </div>
@@ -1859,50 +2479,39 @@ function VueGestionnaire() {
             })}
           </div>
 
-          {totalPages > 1 && (
-            <div style={{ display: "flex", gap: 6, justifyContent: "center", alignItems: "center" }}>
-              <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...ghostBtn, padding: "5px 10px", fontSize: 11, opacity: page === 1 ? 0.4 : 1 }}>«</button>
-              <button onClick={() => setPage(p => p - 1)} disabled={page === 1} style={{ ...ghostBtn, padding: "5px 12px", fontSize: 11, opacity: page === 1 ? 0.4 : 1 }}>‹ Précédent</button>
-              <span style={{ fontSize: 12, color: C.textMid, padding: "5px 12px" }}>Page {page} / {totalPages}</span>
-              <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages} style={{ ...ghostBtn, padding: "5px 12px", fontSize: 11, opacity: page >= totalPages ? 0.4 : 1 }}>Suivant ›</button>
-              <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} style={{ ...ghostBtn, padding: "5px 10px", fontSize: 11, opacity: page >= totalPages ? 0.4 : 1 }}>»</button>
+          {totalPages>1&&(
+            <div style={{display:"flex",gap:6,justifyContent:"center",alignItems:"center"}}>
+              <button onClick={()=>setPage(1)} disabled={page===1} style={{...ghostBtn,padding:"5px 10px",fontSize:11,opacity:page===1?.4:1}}><ChevronsLeft size={13}/></button>
+              <button onClick={()=>setPage(p=>p-1)} disabled={page===1} style={{...ghostBtn,padding:"5px 12px",fontSize:11,opacity:page===1?.4:1}}><ChevronLeft size={13}/> Précédent</button>
+              <span style={{fontSize:12,color:C.textMid,padding:"5px 12px"}}>Page {page} / {totalPages}</span>
+              <button onClick={()=>setPage(p=>p+1)} disabled={page>=totalPages} style={{...ghostBtn,padding:"5px 12px",fontSize:11,opacity:page>=totalPages?.4:1}}>Suivant <ChevronRight size={13}/></button>
+              <button onClick={()=>setPage(totalPages)} disabled={page>=totalPages} style={{...ghostBtn,padding:"5px 10px",fontSize:11,opacity:page>=totalPages?.4:1}}><ChevronsRight size={13}/></button>
             </div>
           )}
         </>
       )}
 
-      {/* ════ STATISTIQUES ════ */}
-      {activeTab === "stats" && (
-        <StatsView
-          dashboard={dashboard}
-          cards={cards}
-          transactions={transactions}
-          printPDF={() =>
-            printTransactionsPDF(transactions, "Rapport mensuel complet", `${MOIS[now.getMonth()]} ${now.getFullYear()}`)
-          }
-        />
+      {/* ════ STATS ════ */}
+      {activeTab==="stats"&&(
+        <StatsView dashboard={dashboard} cards={cards} transactions={transactions}
+          printPDF={()=>printTransactionsPDF(transactions,"Rapport mensuel complet",`${MOIS[now.getMonth()]} ${now.getFullYear()}`)}/>
       )}
 
       {/* Modals globaux */}
-      {cardFormMode !== null && (
-        <ModalCarteForm
-          editCard={cardFormMode === "create" ? null : cardFormMode}
-          onClose={() => setCardFormMode(null)}
-          onSuccess={() => {
-            setCardFormMode(null);
-            setSelCard(null);
-            loadCards();
-          }}
-          showToast={showToast}
-        />
+      {cardFormMode!==null&&(
+        <ModalCarteForm editCard={cardFormMode==="create"?null:cardFormMode} onClose={()=>setCardFormMode(null)}
+          onSuccess={()=>{setCardFormMode(null);setSelCard(null);loadCards();}} showToast={showToast}/>
       )}
-      {rejectModal && (
-        <ModalRejet
-          onClose={() => setRejectModal(null)}
-          onConfirm={reason => handleRejeter(rejectModal, reason)}
-          loading={actioning === rejectModal}
-        />
+      {rejectModal&&(
+        <ModalRejet onClose={()=>setRejectModal(null)}
+          onConfirm={reason=>handleRejeter(rejectModal,reason)} loading={actioning===rejectModal}/>
       )}
+    {qrCard && (
+  <QRCodeDisplay
+    card={qrCard}
+    onClose={() => setQrCard(null)}
+  />
+)}
     </div>
   );
 }
@@ -1910,8 +2519,8 @@ function VueGestionnaire() {
 // ════════════════════════════════════════════════════════════════════════════
 // EXPORT PRINCIPAL
 // ════════════════════════════════════════════════════════════════════════════
-export function TabCarburant({ role = "GESTIONNAIRE", reservations = [] }) {
-  return role === "CHAUFFEUR"
-    ? <VueChauffeur reservations={reservations} />
-    : <VueGestionnaire />;
+export function TabCarburant({ role="GESTIONNAIRE", reservations=[] }) {
+  return role==="CHAUFFEUR"
+    ? <VueChauffeur reservations={reservations}/>
+    : <VueGestionnaire/>;
 }

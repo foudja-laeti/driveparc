@@ -11,7 +11,8 @@ from core.models import BaseModel
 CARD_CATEGORY = [
     ('BUS_SCOLAIRE',  'Bus scolaire'),
     ('BUS_ORDINAIRE', 'Bus ordinaire'),
-    ('UTILITAIRE',    'Utilitaire / Tourisme'),
+    ('UTILITAIRE',    'Utilitaire '),
+    ('TOURISME',      'Tourisme'),
     ('FONCTION',      'Véhicule de fonction'),
 ]
 
@@ -19,6 +20,7 @@ MONTHLY_QUOTA = {
     'BUS_SCOLAIRE':  185_000,
     'BUS_ORDINAIRE': 125_000,
     'UTILITAIRE':    100_000,
+    'TOURISME':      100_000,
     'FONCTION':      150_000,
 }
 

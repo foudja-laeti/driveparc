@@ -62,7 +62,6 @@ export const EMPTY_VEH = {
 export const C = {
   green:"#1B5E37", greenMid:"#2D7A4F", greenLight:"#EAF4EE",
   red:"#C0182A",   redLight:"#FDF0F1",  white:"#FFFFFF", bg:"#F0F3F1",
-  // Sidebar — fond principal de la page (sidebar flottante verte par-dessus)
   pageBg:"#F0F3F1",
   sidebar:"#1a5d3b",
   sideHover:"rgba(255,255,255,0.10)",
@@ -88,22 +87,23 @@ export const STATUS_MAP = {
 
 // ── Styles globaux ────────────────────────────────────────────────────────────
 export const S = {
-  // Shell principal — fond page
+  // FIX bandes noires : position:fixed + inset:0 colle le dashboard aux 4 bords
+  // du viewport, indépendamment du conteneur parent (#root, body, etc.)
   shell: {
-    display:"flex", height:"100vh", width:"100vw",
+    position:"fixed", top:0, right:0, bottom:0, left:0,
+    display:"flex",
     fontFamily:"'Inter',-apple-system,sans-serif",
     background:C.pageBg, overflow:"hidden",
-    padding: "12px",
-    gap: "12px",
+    padding:"12px",
+    gap:"12px",
+    boxSizing:"border-box",
   },
 
-  // Sidebar : colonne gauche avec header blanc + nav verte flottante
   sidebarCol: {
     display:"flex", flexDirection:"column",
     width:220, flexShrink:0, gap:"10px",
   },
 
-  // Header blanc en haut de la sidebar
   sideHeader: {
     background:"#fff",
     borderRadius:14,
@@ -118,7 +118,6 @@ export const S = {
   brandName: { fontSize:13, fontWeight:800, color:"#1e293b", letterSpacing:".4px", lineHeight:1.1 },
   brandSub:  { fontSize:9,  color:"#94a3b8", marginTop:1 },
 
-  // Sidebar verte arrondie (nav)
   sidebar: {
     background: C.sidebar,
     borderRadius: 16,
@@ -154,10 +153,8 @@ export const S = {
   sideUserRole: { fontSize:9,  color:"rgba(255,255,255,0.50)" },
   logoutBtn:    { display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 10px", borderRadius:10, border:"none", cursor:"pointer", background:"rgba(192,24,42,0.18)", color:"rgba(255,180,180,0.9)", fontSize:11, fontFamily:"inherit", transition:"all .15s" },
 
-  // Zone principale
   main:      { flex:1, display:"flex", flexDirection:"column", gap:"10px", overflow:"hidden", minWidth:0 },
 
-  // Topbar blanc arrondi
   topbar:    {
     background:"#fff", borderRadius:14, padding:"12px 20px",
     display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -199,7 +196,6 @@ export const S = {
   filterPill:  { padding:"5px 12px", border:`1.5px solid ${C.border}`, borderRadius:20, fontSize:11, fontWeight:600, cursor:"pointer", background:C.bg, color:C.textMid, fontFamily:"inherit", whiteSpace:"nowrap", transition:"all .15s" },
   filterPillOn:{ background:C.green, color:"#fff", border:`1.5px solid ${C.green}` },
 
-  // Rétrocompat — brand/brandText inutilisés mais gardés pour éviter les erreurs dans d'autres fichiers
   brand:     { display:"flex", alignItems:"center", gap:11, padding:"20px 16px 16px" },
   brandText: { minWidth:0 },
 };
@@ -219,8 +215,23 @@ export const M = {
 
 export const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-  *{box-sizing:border-box;margin:0;padding:0;}
+  *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
   @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* FIX bandes noires : fond vert clair sur tout le viewport */
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #F0F3F1;
+  }
+  #root, [data-reactroot], body > div:first-child {
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    background: #F0F3F1 !important;
+  }
+
   .nav-btn:hover{background:rgba(255,255,255,0.10)!important;color:#fff!important;}
   .btn-primary:hover{opacity:.88!important;}
   .btn-ghost:hover{background:${C.bg}!important;}

@@ -3,6 +3,23 @@
 // Exclut : documents, maintenance, vignettes (gérés dans d'autres modules)
 
 import { useState, useEffect, useRef, useCallback, useContext, createContext, useReducer } from "react";
+import {
+  Building2, BookOpen, ClipboardList, Plus, Pencil, Trash2,
+  X, Check, AlertTriangle, Search, ChevronDown, GraduationCap,
+  Users, Briefcase, Car, Wrench, Layers, School, Info,
+  LayoutGrid, BookMarked, ChevronRight, FolderOpen,
+  // ── Nouveaux icônes pour remplacer les emojis ──
+  Bus, Star, Camera, FileText, Edit, Eye, Trash,
+  CheckCircle, Clock, Settings, Shield, AlertCircle,
+  MapPin, Navigation, Calendar, DollarSign, Hash,
+  Gauge, Fuel, Zap, ToggleLeft, SlidersHorizontal,
+  Download, FileSpreadsheet, Grid, List, ChevronLeft,
+  ChevronRightIcon, MoreHorizontal, Ban, Wifi, WifiOff,
+  Server, Lock, ClipboardCheck, Activity, RefreshCw,
+  Printer, Save, FileWarning, Info as InfoIcon,
+  TriangleAlert, CircleAlert, CheckCircle2, XCircle,
+  BadgeAlert, PenLine, UserCheck, Route,
+} from "lucide-react";
 import { apiFetch, apiUpload } from "../../utils/api";
 import {
   C, S, M,
@@ -20,9 +37,9 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const PAGE_SIZE = 24;
 
 const ASGN_META = {
-  POOL:         { label: "Parc commun",   color: "#1B5E37", bg: "#EAF4EE", icon: "🚗" },
-  FONCTION:     { label: "Fonction",      color: "#7C3AED", bg: "#F5F3FF", icon: "🎖️" },
-  BUS_SCOLAIRE: { label: "Bus scolaire",  color: "#1D4ED8", bg: "#EFF6FF", icon: "🚌" },
+  POOL:         { label: "Parc commun",   color: "#1B5E37", bg: "#EAF4EE", Icon: Car     },
+  FONCTION:     { label: "Fonction",      color: "#7C3AED", bg: "#F5F3FF", Icon: Star    },
+  BUS_SCOLAIRE: { label: "Bus scolaire",  color: "#1D4ED8", bg: "#EFF6FF", Icon: Bus     },
 };
 
 const STATUS_META = {
@@ -52,27 +69,28 @@ function parseApiError(raw = "", context = "") {
   const r = raw.toLowerCase();
   if (r.includes("unique") || r.includes("already exists") || r.includes("duplicate")) {
     if (r.includes("registration_number") || r.includes("immatriculation"))
-      return "Un véhicule avec ce numéro d'immatriculation existe déjà dans le système.";
+      return "Numéro d'immatriculation déjà existant — un autre véhicule utilise déjà cette plaque dans la base de données. Vérifiez dans la liste du parc ou utilisez un numéro d'immatriculation différent.";
     if (r.includes("internal_code") || r.includes("code interne"))
-      return "Ce code interne est déjà utilisé par un autre véhicule.";
-    if (r.includes("vin")) return "Ce numéro VIN est déjà enregistré pour un autre véhicule.";
-    return "Ces informations sont déjà enregistrées (doublon détecté).";
+      return "Code interne déjà utilisé — ce code (ex : VH-001) est déjà attribué à un autre véhicule. Choisissez un code unique pour ce véhicule.";
+    if (r.includes("vin"))
+      return "Numéro VIN déjà enregistré — ce numéro VIN appartient à un véhicule déjà présent dans la base. Vérifiez qu'il ne s'agit pas d'un doublon ou corrigez le VIN saisi.";
+    return "Doublon détecté — certaines informations saisies existent déjà pour un autre véhicule (immatriculation, code interne ou VIN). Vérifiez ces trois champs avant de réessayer.";
   }
   if (r.includes("permission") || r.includes("403") || r.includes("unauthorized"))
-    return "Vous n'avez pas les droits nécessaires pour effectuer cette action.";
+    return "Accès refusé — vous n'avez pas les droits nécessaires pour effectuer cette action. Contactez un administrateur système.";
   if (r.includes("required") || r.includes("blank") || r.includes("this field"))
-    return "Certains champs obligatoires sont manquants ou invalides.";
+    return "Champs manquants — certains champs obligatoires sont vides ou invalides. Vérifiez les zones surlignées en rouge dans le formulaire.";
   if (r.includes("network") || r.includes("failed to fetch"))
-    return "Impossible de contacter le serveur. Vérifiez votre connexion.";
+    return "Serveur injoignable — impossible de contacter le serveur. Vérifiez votre connexion internet et réessayez.";
   if (r.includes("500") || r.includes("internal server"))
-    return "Erreur interne serveur. Réessayez dans quelques instants.";
+    return "Erreur serveur interne — une erreur inattendue s'est produite côté serveur. Réessayez dans quelques instants ou contactez le support technique.";
   if (context === "suppression") {
     if (r.includes("constraint") || r.includes("foreign key") || r.includes("referenced"))
-      return "Ce véhicule ne peut pas être supprimé — il est lié à des réservations ou entretiens actifs.";
-    return "La suppression a échoué. Ce véhicule est peut-être lié à d'autres données.";
+      return "Suppression impossible — ce véhicule est lié à des réservations ou des entretiens actifs. Annulez ou archivez d'abord ces entrées avant de supprimer le véhicule.";
+    return "Suppression échouée — ce véhicule ne peut pas être supprimé pour le moment. Il est probablement lié à d'autres données du système.";
   }
   if (raw.length > 120 || r.includes("{") || r.includes("traceback"))
-    return `Erreur lors de ${context || "l'opération"}. Veuillez réessayer.`;
+    return `Erreur lors de ${context || "l'opération"}. Veuillez réessayer ou contacter le support si le problème persiste.`;
   return raw;
 }
 
@@ -109,11 +127,19 @@ function buildEmptyForm(initial) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. CONTEXTE TOAST (remplace le singleton anti-pattern)
+// 1. CONTEXTE TOAST
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ToastContext = createContext(null);
 let _toastId = 0;
+
+// Icônes Lucide pour les toasts
+const TOAST_ICONS = {
+  success: CheckCircle2,
+  error:   XCircle,
+  warning: TriangleAlert,
+  info:    InfoIcon,
+};
 
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -125,8 +151,7 @@ function ToastProvider({ children }) {
 
   const add = useCallback(({ type = "info", title, message }) => {
     const id = ++_toastId;
-    const icons = { success: "✅", error: "❌", warning: "⚠️", info: "ℹ️" };
-    setToasts(t => [...t, { id, type, title, message, icon: icons[type], removing: false }]);
+    setToasts(t => [...t, { id, type, title, message, removing: false }]);
     const timer = setTimeout(() => remove(id), 4500);
     return () => clearTimeout(timer);
   }, [remove]);
@@ -140,21 +165,28 @@ function ToastProvider({ children }) {
         aria-label="Notifications"
         style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10, pointerEvents: "none" }}
       >
-        {toasts.map(t => (
-          <div key={t.id} className={`veh-toast veh-toast--${t.type}${t.removing ? " veh-toast--out" : ""}`} role="alert">
-            <span className="veh-toast__icon" aria-hidden="true">{t.icon}</span>
-            <div className="veh-toast__body">
-              <div className="veh-toast__title">{t.title}</div>
-              {t.message && <div className="veh-toast__msg">{t.message}</div>}
+        {toasts.map(t => {
+          const IconComp = TOAST_ICONS[t.type] || InfoIcon;
+          return (
+            <div key={t.id} className={`veh-toast veh-toast--${t.type}${t.removing ? " veh-toast--out" : ""}`} role="alert">
+              <span className="veh-toast__icon" aria-hidden="true">
+                <IconComp size={18} />
+              </span>
+              <div className="veh-toast__body">
+                <div className="veh-toast__title">{t.title}</div>
+                {t.message && <div className="veh-toast__msg">{t.message}</div>}
+              </div>
+              <button
+                className="veh-toast__close"
+                onClick={() => remove(t.id)}
+                aria-label="Fermer la notification"
+              >
+                <X size={14} />
+              </button>
+              <div className="veh-toast__bar" aria-hidden="true" />
             </div>
-            <button
-              className="veh-toast__close"
-              onClick={() => remove(t.id)}
-              aria-label="Fermer la notification"
-            >✕</button>
-            <div className="veh-toast__bar" aria-hidden="true" />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
@@ -167,7 +199,7 @@ function useToast() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. HOOK DE FORMULAIRE (extrait de VehiculeModal)
+// 2. HOOK DE FORMULAIRE
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DRAFT_KEY = "veh_form_draft";
@@ -180,7 +212,6 @@ function useVehicleForm(initial) {
 
   const initialSnapshot = useRef(JSON.stringify(buildEmptyForm(initial)));
 
-  // Restauration du brouillon
   useEffect(() => {
     if (!initial) {
       try {
@@ -190,7 +221,6 @@ function useVehicleForm(initial) {
     }
   }, []);
 
-  // Sauvegarde automatique du brouillon (mode ajout seulement)
   useEffect(() => {
     if (!initial) {
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch { /* rien */ }
@@ -203,14 +233,12 @@ function useVehicleForm(initial) {
   const touch  = k       => setTouched(t => ({ ...t, [k]: true }));
   const clearDraft = ()  => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* rien */ } };
 
-  // Catégorie auto selon places (sauf affectation spéciale)
   useEffect(() => {
     if (form.assignment_type === "FONCTION" || form.assignment_type === "BUS_SCOLAIRE") return;
     const nb = parseInt(form.seating_capacity) || 1;
     setForm(f => ({ ...f, category: nb < 10 ? "TOURISME" : nb < 20 ? "UTILITAIRE" : "BUS" }));
   }, [form.seating_capacity]);
 
-  // Statut auto pour voiture de fonction
   useEffect(() => {
     if (form.assignment_type === "FONCTION") setForm(f => ({ ...f, status: "EN_SERVICE" }));
   }, [form.assignment_type]);
@@ -279,7 +307,7 @@ function useVehicleForm(initial) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. EXPORT PDF
+// 3. EXPORT PDF (liste complète)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function exportPDF(vehicles) {
@@ -331,7 +359,7 @@ function exportPDF(vehicles) {
     .footer { margin-top:14px; font-size:9px; color:#9CA3AF; text-align:center; }
   </style></head><body>
   <div class="header">
-    <div><h1>🚗 Parc Automobile — État du Parc</h1><p>Exporté le ${now} · ${vehicles.length} véhicule${vehicles.length !== 1 ? "s" : ""}</p></div>
+    <div><h1>Parc Automobile — État du Parc</h1><p>Exporté le ${now} · ${vehicles.length} véhicule${vehicles.length !== 1 ? "s" : ""}</p></div>
     <div style="text-align:right;font-size:9px;color:#6B7280"><div style="font-weight:700;font-size:12px;color:#1B5E37">IUC Logbessou</div><div>Service des Transports</div></div>
   </div>
   <div class="stats">
@@ -366,13 +394,161 @@ function exportPDF(vehicles) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. EXPORT EXCEL (SheetJS via CDN — import dynamique)
+// 3b. EXPORT PDF INDIVIDUEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+function exportPDFSingle(v) {
+  const fuelLabel  = k => FUEL_TYPES.find(([x]) => x === k)?.[1] || k;
+  const catLabel   = k => VEHICLE_CATEGORIES.find(([x]) => x === k)?.[1] || k;
+  const asgnLabel  = k => ASGN_META[k]?.label || k;
+  const statusMeta = STATUS_META[v.status] || STATUS_META.DISPONIBLE;
+  const asgnMeta   = ASGN_META[getAssignmentType(v)] || ASGN_META.POOL;
+  const photoUrl   = getPhotoUrl(v);
+  const now        = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  const kmDepuis   = v.km_since_maintenance ?? (Number(v.current_mileage || 0) % KM_REVISION);
+  const pctUsure   = Math.min(Math.round(kmDepuis / KM_REVISION * 100), 100);
+  const barColor   = pctUsure >= 90 ? "#DC2626" : pctUsure >= 70 ? "#D97706" : pctUsure >= 40 ? "#2563EB" : "#16A34A";
+
+  const alertsHtml = (v._alerts || []).map(a => `
+    <div class="alert alert--${a.level}">
+      ${a.level === "danger" ? "[URGENT]" : "[AVERT.]"} ${a.label}
+    </div>`).join("");
+
+  const specs = [
+    ["Immatriculation",    v.registration_number],
+    ["Code interne",       v.internal_code || "—"],
+    ["Marque / Modèle",    `${v.make} ${v.model}`],
+    ["Année",              v.year],
+    ["Couleur",            v.color],
+    ["Catégorie",          catLabel(v.category)],
+    ["Type de véhicule",   v.vehicle_type],
+    ["Carburant",          fuelLabel(v.fuel_type)],
+    ["Transmission",       v.transmission],
+    ["Nombre de places",   `${v.seating_capacity} places`],
+    ["Capacité réservoir", v.fuel_tank_capacity ? `${v.fuel_tank_capacity} L` : "—"],
+    ["Kilométrage actuel", `${Number(v.current_mileage || 0).toLocaleString("fr-FR")} km`],
+    ["Affectation",        asgnLabel(getAssignmentType(v))],
+    ["Statut",             statusMeta.label],
+    ["Directeur assigné",  v.assigned_director || "—"],
+    ["Date d'achat",       v.purchase_date ? new Date(v.purchase_date).toLocaleDateString("fr-FR") : "—"],
+    ["Prix d'achat",       v.purchase_price ? `${Number(v.purchase_price).toLocaleString("fr-FR")} FCFA` : "—"],
+    ["N° VIN",             v.vin_number || "—"],
+  ];
+
+  const specsHtml = specs.map(([label, val], i) => `
+    <tr style="${i % 2 === 0 ? "" : "background:#F7FAF8"}">
+      <td class="spec-key">${label}</td>
+      <td class="spec-val">${val}</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+  <title>Fiche Véhicule — ${v.registration_number}</title>
+  <style>
+    @page { size: A4 portrait; margin: 18mm 15mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,sans-serif; font-size:11px; color:#1A2820; background:#fff; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:14px; border-bottom:3px solid #1B5E37; margin-bottom:20px; }
+    .header-title { font-size:20px; font-weight:800; color:#1B5E37; letter-spacing:-.5px; }
+    .header-plate { font-size:13px; color:#4A6358; margin-top:5px; font-weight:600; }
+    .header-right { text-align:right; font-size:10px; color:#6B7280; line-height:1.6; }
+    .header-right strong { font-size:13px; color:#1B5E37; display:block; margin-bottom:2px; }
+    .hero { display:flex; gap:20px; margin-bottom:20px; align-items:flex-start; }
+    .hero-photo { width:220px; height:150px; border-radius:12px; object-fit:cover; flex-shrink:0; border:1.5px solid #E8EDEB; }
+    .hero-placeholder { width:220px; height:150px; border-radius:12px; flex-shrink:0; background:#EAF4EE; display:flex; align-items:center; justify-content:center; font-size:32px; font-weight:700; color:#1B5E37; border:1.5px dashed #CBD5CE; }
+    .hero-info { flex:1; }
+    .hero-title { font-size:22px; font-weight:800; color:#1A2820; letter-spacing:-.5px; margin-bottom:3px; }
+    .hero-sub { font-size:13px; color:#4A6358; font-weight:600; margin-bottom:12px; }
+    .badges { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .badge { padding:4px 12px; border-radius:99px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.8px; }
+    .km-section { margin-top:8px; }
+    .km-label-row { display:flex; justify-content:space-between; font-size:10px; font-weight:700; margin-bottom:5px; }
+    .km-track { height:8px; background:#E8EDEB; border-radius:99px; overflow:hidden; }
+    .km-fill  { height:100%; border-radius:99px; }
+    .km-hint  { font-size:9px; color:#8EA99A; margin-top:5px; }
+    .alerts { display:flex; flex-direction:column; gap:6px; margin-bottom:18px; }
+    .alert { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; font-size:11px; font-weight:700; }
+    .alert--danger  { background:#FDF0F1; color:#BE123C; border:1px solid #FECDD3; }
+    .alert--warning { background:#FFFBEB; color:#92400E; border:1px solid #FDE68A; }
+    .section-title { font-size:9px; font-weight:800; color:#8EA99A; text-transform:uppercase; letter-spacing:1.5px; margin:18px 0 10px; padding-bottom:6px; border-bottom:1.5px solid #E8EDEB; }
+    table.specs { width:100%; border-collapse:collapse; }
+    table.specs td { padding:7px 10px; border-bottom:1px solid #F0F4F2; vertical-align:middle; }
+    td.spec-key { font-weight:700; color:#4A6358; font-size:10px; text-transform:uppercase; letter-spacing:.6px; width:42%; }
+    td.spec-val { font-size:12px; color:#1A2820; font-weight:600; }
+    .notes-box { padding:12px 14px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:8px; font-size:12px; color:#1A2820; line-height:1.6; margin-top:10px; }
+    .footer { margin-top:24px; padding-top:12px; border-top:1px solid #E8EDEB; font-size:9px; color:#9CA3AF; display:flex; justify-content:space-between; }
+  </style></head><body>
+  <div class="header">
+    <div>
+      <div class="header-title">Fiche Véhicule</div>
+      <div class="header-plate">${v.registration_number}${v.internal_code ? ` · ${v.internal_code}` : ""}</div>
+    </div>
+    <div class="header-right">
+      <strong>IUC Logbessou</strong>
+      Service des Transports<br>
+      Imprimé le ${now}
+    </div>
+  </div>
+  <div class="hero">
+    ${photoUrl
+      ? `<img class="hero-photo" src="${photoUrl}" alt="Photo du véhicule" />`
+      : `<div class="hero-placeholder">VEH</div>`
+    }
+    <div class="hero-info">
+      <div class="hero-title">${v.make} ${v.model}</div>
+      <div class="hero-sub">${v.year} · ${v.color}</div>
+      <div class="badges">
+        <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${statusMeta.label}</span>
+        <span class="badge" style="background:${asgnMeta.bg};color:${asgnMeta.color}">${asgnMeta.label}</span>
+        ${v.assigned_director ? `<span class="badge" style="background:#F4F6F5;color:#4A6358;">${v.assigned_director}</span>` : ""}
+      </div>
+      <div class="km-section">
+        <div class="km-label-row">
+          <span>Usure depuis révision</span>
+          <span style="color:${barColor};font-weight:800">${pctUsure}%</span>
+        </div>
+        <div class="km-track">
+          <div class="km-fill" style="width:${pctUsure}%;background:${barColor}"></div>
+        </div>
+        <div class="km-hint">
+          ${Number(kmDepuis).toLocaleString("fr-FR")} km parcourus · ${Math.max(KM_REVISION - kmDepuis, 0).toLocaleString("fr-FR")} km avant prochaine révision
+        </div>
+      </div>
+    </div>
+  </div>
+  ${alertsHtml ? `<div class="alerts">${alertsHtml}</div>` : ""}
+  <div class="section-title">Fiche technique</div>
+  <table class="specs"><tbody>${specsHtml}</tbody></table>
+  ${v.notes ? `<div class="section-title">Notes & Remarques</div><div class="notes-box">${v.notes}</div>` : ""}
+  <div class="footer">
+    <span>Document généré automatiquement — Système de Gestion du Parc Automobile · IUC Logbessou</span>
+    <span>${v.registration_number}</span>
+  </div>
+  <script>window.onload = function(){ window.print(); };<\/script>
+  </body></html>`;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  let iframe = document.getElementById("__pdf_single_frame__");
+  if (!iframe) {
+    iframe = document.createElement("iframe");
+    iframe.id = "__pdf_single_frame__";
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;";
+    document.body.appendChild(iframe);
+  }
+  iframe.src = url;
+  iframe.onload = () => {
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+    catch { alert("Votre navigateur a bloqué l'impression. Autorisez les popups pour ce site."); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. EXPORT EXCEL
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function exportExcel(vehicles) {
-  // Import dynamique pour ne pas alourdir le bundle si pas utilisé
   const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.mjs");
-
   const fuelLabel   = k => FUEL_TYPES.find(([x]) => x === k)?.[1] || k;
   const catLabel    = k => VEHICLE_CATEGORIES.find(([x]) => x === k)?.[1] || k;
   const statusLabel = k => STATUS_META[k]?.label || k;
@@ -404,10 +580,7 @@ async function exportExcel(vehicles) {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Véhicules");
-
-  // Largeurs colonnes
   ws["!cols"] = [14,12,12,14,8,10,12,12,10,12,8,12,16,14,14,18,12,16,20,30].map(w => ({ wch: w }));
-
   const now = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `parc_automobile_${now}.xlsx`);
 }
@@ -416,10 +589,9 @@ async function exportExcel(vehicles) {
 // 5. CONFIRM DIALOG (accessible)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ConfirmDialog({ icon = "🗑️", title, message, confirmLabel = "Confirmer", confirmColor = "#C0182A", confirmBg = "#FDF0F1", onConfirm, onCancel, loading }) {
+function ConfirmDialog({ title, message, confirmLabel = "Confirmer", confirmColor = "#C0182A", confirmBg = "#FDF0F1", onConfirm, onCancel, loading }) {
   const dialogRef = useRef(null);
 
-  // Focus trap
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
@@ -451,7 +623,12 @@ function ConfirmDialog({ icon = "🗑️", title, message, confirmLabel = "Confi
         aria-describedby="confirm-desc"
         className="veh-confirm-box"
       >
-        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }} aria-hidden="true">{icon}</div>
+        {/* Icône Lucide centrée */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#FDF0F1", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Trash2 size={26} color="#C0182A" />
+          </div>
+        </div>
         <div id="confirm-title" style={{ fontSize: 17, fontWeight: 800, color: "#1A2820", textAlign: "center", marginBottom: 8 }}>{title}</div>
         <div id="confirm-desc" style={{ fontSize: 13, color: "#4A6358", textAlign: "center", lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -461,7 +638,10 @@ function ConfirmDialog({ icon = "🗑️", title, message, confirmLabel = "Confi
             disabled={loading}
             style={{ padding: "10px 22px", border: "none", borderRadius: 9, background: confirmBg, color: confirmColor, fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? .7 : 1, display: "flex", alignItems: "center", gap: 6 }}
           >
-            {loading ? <><span style={{ animation: "veh-spin .8s linear infinite", display: "inline-block" }}>⟳</span> Suppression…</> : confirmLabel}
+            {loading
+              ? <><RefreshCw size={14} style={{ animation: "veh-spin .8s linear infinite" }} /> Suppression…</>
+              : <><Trash2 size={14} /> {confirmLabel}</>
+            }
           </button>
         </div>
       </div>
@@ -506,6 +686,8 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
   const kmRestants = Math.max(KM_REVISION - kmDepuis, 0);
   const barColor   = pctUsure >= 90 ? "#DC2626" : pctUsure >= 70 ? "#D97706" : pctUsure >= 40 ? "#2563EB" : "#16A34A";
 
+  const AsgnIcon = asgnMeta.Icon;
+
   return (
     <article
       className={`veh-card${isHS ? " veh-card--hs" : ""}`}
@@ -522,7 +704,10 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
               style={{ cursor: isHS ? "default" : "zoom-in" }}
             />
           : <div className="veh-card__placeholder" aria-hidden="true">
-              {catInfo?.[2] ?? "🚗"}
+              {/* Icône Lucide selon catégorie */}
+              {v.category === "BUS" ? <Bus size={48} color="#1B5E37" opacity={0.4} />
+                : v.category === "UTILITAIRE" ? <Briefcase size={48} color="#1B5E37" opacity={0.4} />
+                : <Car size={48} color="#1B5E37" opacity={0.4} />}
             </div>
         }
         <div
@@ -530,9 +715,15 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
           style={{ background: `${asgnMeta.bg}dd`, color: asgnMeta.color, border: `1px solid ${asgnMeta.color}22` }}
           aria-label={`Affectation : ${asgnMeta.label}`}
         >
-          <span aria-hidden="true">{asgnMeta.icon}</span> {asgnMeta.label}
+          <AsgnIcon size={10} aria-hidden="true" />
+          {asgnMeta.label}
         </div>
-        {isHS && <div className="veh-card__hs-ribbon">Hors service</div>}
+        {isHS && (
+          <div className="veh-card__hs-ribbon">
+            <Ban size={10} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+            Hors service
+          </div>
+        )}
       </div>
 
       {/* Corps */}
@@ -559,13 +750,14 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
               <div className="veh-card__km">
+                <Gauge size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: 3, color: "#8EA99A" }} />
                 {Number(v.current_mileage || 0).toLocaleString("fr-FR")}
                 <span> km</span>
               </div>
               {!isHS && (
-                <div style={{ fontSize: 10, color: barColor, fontWeight: 700 }}>
+                <div style={{ fontSize: 10, color: barColor, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>
                   {pctUsure >= 90
-                    ? "⚠️ Révision urgente"
+                    ? <><AlertTriangle size={10} /> Révision urgente</>
                     : `${kmRestants.toLocaleString("fr-FR")} km avant révision`}
                 </div>
               )}
@@ -600,7 +792,11 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
           <div className="veh-card__alerts" aria-label="Alertes">
             {v._alerts.slice(0, 2).map((a, i) => (
               <div key={i} className={`veh-card__alert veh-card__alert--${a.level}`}>
-                <span aria-hidden="true">{a.level === "danger" ? "🔴" : "🟡"}</span> {a.label}
+                {a.level === "danger"
+                  ? <AlertCircle size={11} aria-hidden="true" />
+                  : <AlertTriangle size={11} aria-hidden="true" />
+                }
+                {a.label}
               </div>
             ))}
           </div>
@@ -609,22 +805,41 @@ function VehicleCard({ v, onEdit, onDelete, onPhotoView, onDetail, deleting }) {
         {/* Actions */}
         <div className="veh-card__actions">
           <button
+            className="veh-card__btn"
+            style={{ background: "#FFF7ED", color: "#C2410C", flex: "none", padding: "5px 10px", display: "flex", alignItems: "center", gap: 4 }}
+            onClick={e => { e.stopPropagation(); exportPDFSingle(v); }}
+            aria-label={`Exporter la fiche PDF de ${v.make} ${v.model}`}
+            title="Exporter la fiche en PDF"
+          >
+            <Printer size={11} /> PDF
+          </button>
+          <button
             className="veh-card__btn veh-card__btn--detail"
             onClick={e => { e.stopPropagation(); onDetail(v); }}
             aria-label={`Voir la fiche de ${v.make} ${v.model}`}
-          >📋 Fiche</button>
+            style={{ display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <ClipboardList size={11} /> Fiche
+          </button>
           <button
             className="veh-card__btn veh-card__btn--edit"
             onClick={e => { e.stopPropagation(); onEdit(v); }}
             aria-label={`Modifier ${v.make} ${v.model}`}
-          >✏️ Modifier</button>
+            style={{ display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <Pencil size={11} /> Modifier
+          </button>
           <button
             className="veh-card__btn veh-card__btn--delete"
             disabled={deleting === v.id}
             onClick={e => { e.stopPropagation(); onDelete(v); }}
             aria-label={`Supprimer ${v.make} ${v.model}`}
+            style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}
           >
-            {deleting === v.id ? "⟳" : "🗑️"}
+            {deleting === v.id
+              ? <RefreshCw size={11} style={{ animation: "veh-spin .8s linear infinite" }} />
+              : <Trash2 size={11} />
+            }
           </button>
         </div>
       </div>
@@ -642,7 +857,6 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
   const asgnMeta   = ASGN_META[getAssignmentType(v)] || ASGN_META.POOL;
   const statusMeta = STATUS_META[v.status] || STATUS_META.DISPONIBLE;
 
-  // Raccourci clavier
   useEffect(() => {
     const handler = e => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);
@@ -652,6 +866,8 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
   const kmDepuis   = v.km_since_maintenance ?? (Number(v.current_mileage || 0) % KM_REVISION);
   const pctUsure   = Math.min(Math.round(kmDepuis / KM_REVISION * 100), 100);
   const barColor   = pctUsure >= 90 ? "#DC2626" : pctUsure >= 70 ? "#D97706" : pctUsure >= 40 ? "#2563EB" : "#16A34A";
+
+  const AsgnIcon = asgnMeta.Icon;
 
   const Stat = ({ label, value, accent }) => (
     <div style={{ background: "#F7FAF8", borderRadius: 10, padding: "12px 14px" }}>
@@ -675,7 +891,11 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
         <div style={{ position: "relative", height: 200, background: "#EAF4EE", borderRadius: "20px 20px 0 0", overflow: "hidden" }}>
           {photoUrl
             ? <img src={photoUrl} alt={`${v.make} ${v.model}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80 }}>{catInfo?.[2] ?? "🚗"}</div>
+            : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {v.category === "BUS" ? <Bus size={80} color="#1B5E37" opacity={0.3} />
+                  : v.category === "UTILITAIRE" ? <Briefcase size={80} color="#1B5E37" opacity={0.3} />
+                  : <Car size={80} color="#1B5E37" opacity={0.3} />}
+              </div>
           }
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.6))" }} />
           <div style={{ position: "absolute", bottom: 16, left: 20, right: 60 }}>
@@ -689,7 +909,9 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
             onClick={onClose}
             aria-label="Fermer la fiche"
             style={{ position: "absolute", top: 12, right: 12, width: 34, height: 34, borderRadius: "50%", background: "rgba(0,0,0,.5)", color: "#fff", border: "none", fontSize: 16, cursor: "pointer", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}
-          >✕</button>
+          >
+            <X size={16} />
+          </button>
         </div>
 
         <div style={{ padding: "24px 28px" }}>
@@ -699,7 +921,10 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
             <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
               {v._alerts.map((a, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: a.level === "danger" ? "#FDF0F1" : "#FFFBEB", border: `1px solid ${a.level === "danger" ? "#FECDD3" : "#FDE68A"}` }}>
-                  <span style={{ fontSize: 16 }}>{a.level === "danger" ? "🔴" : "🟡"}</span>
+                  {a.level === "danger"
+                    ? <AlertCircle size={16} color="#BE123C" />
+                    : <AlertTriangle size={16} color="#92400E" />
+                  }
                   <div style={{ fontSize: 12, fontWeight: 700, color: a.level === "danger" ? "#BE123C" : "#92400E" }}>{a.label}</div>
                 </div>
               ))}
@@ -708,7 +933,7 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
 
           {/* Affectation */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: asgnMeta.bg, border: `1px solid ${asgnMeta.color}22`, marginBottom: 20 }}>
-            <span style={{ fontSize: 20 }}>{asgnMeta.icon}</span>
+            <AsgnIcon size={20} color={asgnMeta.color} />
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: asgnMeta.color, textTransform: "uppercase", letterSpacing: "1px" }}>{asgnMeta.label}</div>
               {v.assigned_director && <div style={{ fontSize: 12, color: "#4A6358", marginTop: 2 }}>Assigné à : {v.assigned_director}</div>}
@@ -718,7 +943,9 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
           {/* Barre usure kilométrique */}
           <div style={{ marginBottom: 20, padding: "14px 16px", background: "#F7FAF8", borderRadius: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#4A6358" }}>Usure depuis révision</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#4A6358", display: "flex", alignItems: "center", gap: 6 }}>
+                <Gauge size={14} /> Usure depuis révision
+              </span>
               <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{pctUsure}%</span>
             </div>
             <div style={{ height: 8, background: "#E8EDEB", borderRadius: 99, overflow: "hidden" }}>
@@ -746,15 +973,25 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
           {/* Notes */}
           {v.notes && (
             <div style={{ padding: "14px 16px", background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A", marginBottom: 20 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#92400E", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 6 }}>📝 Notes</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#92400E", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <BookOpen size={12} /> Notes
+              </div>
               <div style={{ fontSize: 13, color: "#1A2820", lineHeight: 1.6 }}>{v.notes}</div>
             </div>
           )}
 
-          {/* Action */}
+          {/* Actions */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 16, borderTop: "1px solid #E8EDEB" }}>
             <button onClick={onClose} className="veh-btn-ghost">Fermer</button>
-            <button onClick={() => { onClose(); onEdit(v); }} style={{ ...S.btn, display: "flex", alignItems: "center", gap: 6 }}>✏️ Modifier ce véhicule</button>
+            <button
+              onClick={() => exportPDFSingle(v)}
+              style={{ padding: "8px 16px", border: "1.5px solid #FED7AA", borderRadius: 9, background: "#FFF7ED", color: "#C2410C", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Printer size={14} /> Exporter PDF
+            </button>
+            <button onClick={() => { onClose(); onEdit(v); }} style={{ ...S.btn, display: "flex", alignItems: "center", gap: 6 }}>
+              <Pencil size={14} /> Modifier ce véhicule
+            </button>
           </div>
         </div>
       </div>
@@ -763,7 +1000,7 @@ function VehicleDetailModal({ v, onClose, onEdit }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. ICÔNES SVG
+// 9. ICÔNES SVG (grille et liste — conservés car custom)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IconGrid = () => (
@@ -811,8 +1048,8 @@ function computeAlerts(v) {
   checks.forEach(({ key, label }) => {
     const d = diffDays(v[key]);
     if (d === null) return;
-    if (d < 0)      alerts.push({ label: `${label} expirée`, level: "danger" });
-    else if (d <= 7) alerts.push({ label: `${label} expire dans ${d} j`, level: "danger" });
+    if (d < 0)       alerts.push({ label: `${label} expirée`, level: "danger" });
+    else if (d <= 7)  alerts.push({ label: `${label} expire dans ${d} j`, level: "danger" });
     else if (d <= 30) alerts.push({ label: `${label} expire dans ${d} j`, level: "warning" });
   });
 
@@ -825,7 +1062,7 @@ function computeAlerts(v) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. CSS EMBARQUÉ (module-scoped, BEM, dark-mode ready)
+// 11. CSS EMBARQUÉ
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VEHICLES_CSS = `
@@ -836,7 +1073,6 @@ const VEHICLES_CSS = `
   @keyframes veh-slide-up { from{opacity:0;transform:translateY(20px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
   @keyframes veh-fade-in  { from{opacity:0} to{opacity:1} }
 
-  /* ── OVERLAY ── */
   .veh-overlay {
     position:fixed; inset:0; background:rgba(0,0,0,.55);
     backdrop-filter:blur(4px); z-index:8000;
@@ -850,7 +1086,7 @@ const VEHICLES_CSS = `
     animation:veh-slide-up .2s cubic-bezier(.34,1.56,.64,1);
   }
 
-  /* ── TOASTS ── */
+  /* TOASTS */
   .veh-toast {
     display:flex; align-items:flex-start; gap:12px; padding:14px 18px;
     border-radius:12px; min-width:300px; max-width:420px;
@@ -864,7 +1100,11 @@ const VEHICLES_CSS = `
   .veh-toast--error   { background:#FFF1F2; border:1px solid #FECDD3; } .veh-toast--error::before   { background:#E11D48; }
   .veh-toast--warning { background:#FFFBEB; border:1px solid #FDE68A; } .veh-toast--warning::before { background:#D97706; }
   .veh-toast--info    { background:#EFF6FF; border:1px solid #BFDBFE; } .veh-toast--info::before    { background:#2563EB; }
-  .veh-toast__icon  { font-size:18px; flex-shrink:0; margin-top:1px; }
+  .veh-toast__icon  { flex-shrink:0; margin-top:1px; display:flex; align-items:center; }
+  .veh-toast--success .veh-toast__icon { color:#16A34A; }
+  .veh-toast--error   .veh-toast__icon { color:#E11D48; }
+  .veh-toast--warning .veh-toast__icon { color:#D97706; }
+  .veh-toast--info    .veh-toast__icon { color:#2563EB; }
   .veh-toast__body  { flex:1; }
   .veh-toast__title { font-size:13px; font-weight:700; margin-bottom:2px; }
   .veh-toast--success .veh-toast__title { color:#15803D; }
@@ -872,14 +1112,14 @@ const VEHICLES_CSS = `
   .veh-toast--warning .veh-toast__title { color:#92400E; }
   .veh-toast--info    .veh-toast__title { color:#1D4ED8; }
   .veh-toast__msg   { font-size:12px; color:#4B5563; line-height:1.5; }
-  .veh-toast__close { background:none; border:none; cursor:pointer; font-size:14px; color:#9CA3AF; padding:0; flex-shrink:0; }
+  .veh-toast__close { background:none; border:none; cursor:pointer; color:#9CA3AF; padding:0; flex-shrink:0; display:flex; align-items:center; }
   .veh-toast__bar   { position:absolute; bottom:0; left:0; height:3px; width:100%; animation:veh-toast-out 4.5s linear forwards; opacity:.4; }
   .veh-toast--success .veh-toast__bar { background:#16A34A; }
   .veh-toast--error   .veh-toast__bar { background:#E11D48; }
   .veh-toast--warning .veh-toast__bar { background:#D97706; }
   .veh-toast--info    .veh-toast__bar { background:#2563EB; }
 
-  /* ── CARTES ── */
+  /* CARTES */
   .veh-card {
     background:#fff; border-radius:16px; overflow:hidden;
     border:1.5px solid #E8EDEB;
@@ -890,7 +1130,6 @@ const VEHICLES_CSS = `
   .veh-card--hs { opacity:.72; filter:grayscale(55%); border-color:#CBD5CE !important; background:#F7F9F8; }
   .veh-card--hs:hover { transform:none !important; box-shadow:none !important; border-color:#9EAF9F !important; }
 
-  /* Skeleton */
   .veh-card--skeleton { pointer-events:none; }
   .veh-skel {
     border-radius:6px;
@@ -905,7 +1144,7 @@ const VEHICLES_CSS = `
   .veh-card:not(.veh-card--hs):hover .veh-card__img { transform:scale(1.04); }
   .veh-card__placeholder {
     width:100%; height:160px; display:flex; align-items:center; justify-content:center;
-    background:linear-gradient(135deg,#EAF4EE 0%,#F4F6F5 100%); font-size:52px;
+    background:linear-gradient(135deg,#EAF4EE 0%,#F4F6F5 100%);
   }
   .veh-card__badge-asgn {
     position:absolute; top:10px; left:10px; padding:3px 9px; border-radius:99px;
@@ -917,6 +1156,7 @@ const VEHICLES_CSS = `
     background:#6B7280; color:#fff; font-size:9px; font-weight:800;
     letter-spacing:1.5px; text-transform:uppercase;
     padding:3px 12px; border-radius:99px; white-space:nowrap;
+    display:flex; align-items:center; gap:4px;
   }
 
   .veh-card__body   { padding:14px 16px 16px; flex:1; display:flex; flex-direction:column; }
@@ -926,7 +1166,7 @@ const VEHICLES_CSS = `
   .veh-card__tags   { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
   .veh-card__tag    { padding:3px 9px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; }
   .veh-card__footer { margin-top:auto; padding-top:10px; }
-  .veh-card__km     { font-size:12px; color:#4A6358; font-weight:600; }
+  .veh-card__km     { font-size:12px; color:#4A6358; font-weight:600; display:flex; align-items:center; gap:4px; }
   .veh-card__km span{ font-size:10px; color:#8EA99A; font-weight:400; }
 
   .veh-card__alerts { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
@@ -934,31 +1174,29 @@ const VEHICLES_CSS = `
   .veh-card__alert--danger  { background:#FDF0F1; color:#BE123C; }
   .veh-card__alert--warning { background:#FFFBEB; color:#92400E; }
 
-  .veh-card__actions { display:flex; gap:6px; margin-top:10px; opacity:0; transition:opacity .18s; }
+  .veh-card__actions { display:flex; gap:6px; margin-top:10px; opacity:0; transition:opacity .18s; flex-wrap:wrap; }
   .veh-card:hover .veh-card__actions { opacity:1; }
   .veh-card__btn  { padding:5px 10px; border:none; border-radius:7px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit; transition:all .12s; flex:1; }
   .veh-card__btn--detail { background:#F0FDF4; color:#15803D; }
   .veh-card__btn--edit   { background:#EFF6FF; color:#1D4ED8; }
   .veh-card__btn--delete { background:#FDF0F1; color:#C0182A; }
 
-  /* ── TABLEAU ── */
+  /* TABLEAU */
   .tr-row-veh:hover td { background:#FAFBFA; }
   .tr-row-veh td { transition:background .12s; }
   .tr-hors-service td { background:#F7F9F8 !important; color:#9CA3AF; }
   .tr-hors-service td b, .tr-hors-service td span { color:#9CA3AF !important; }
-
-  /* En-têtes triables */
   .veh-th-sort { cursor:pointer; user-select:none; white-space:nowrap; }
   .veh-th-sort:hover { color:#1B5E37; background:#F0FDF4; }
 
-  /* ── STAT CARDS ── */
+  /* STAT CARDS */
   .veh-stat-card {
     padding:14px 18px; border-radius:12px; cursor:pointer;
     transition:all .18s; flex:1; min-width:150px;
   }
   .veh-stat-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.08); }
 
-  /* ── TOGGLE VUE ── */
+  /* TOGGLE VUE */
   .veh-view-btn {
     width:36px; height:36px; border-radius:9px; border:1.5px solid #E2E8E5;
     background:#fff; display:flex; align-items:center; justify-content:center;
@@ -967,7 +1205,7 @@ const VEHICLES_CSS = `
   .veh-view-btn--active { background:#1B5E37; border-color:#1B5E37; color:#fff; }
   .veh-view-btn:not(.veh-view-btn--active):hover { background:#EAF4EE; color:#1B5E37; border-color:#1B5E37; }
 
-  /* ── BOUTONS EXPORT ── */
+  /* BOUTONS EXPORT */
   .veh-export-btn {
     display:flex; align-items:center; gap:6px;
     padding:7px 14px; border-radius:8px; font-size:12px; font-weight:700;
@@ -977,7 +1215,7 @@ const VEHICLES_CSS = `
   .veh-export-btn--pdf   { background:#F0FDF4; color:#15803D; border-color:#BBF7D0; }
   .veh-export-btn--excel { background:#F0FDF4; color:#15803D; border-color:#BBF7D0; }
 
-  /* ── BOUTON GHOST ── */
+  /* BOUTON GHOST */
   .veh-btn-ghost {
     padding:8px 16px; border:1.5px solid #E2E8E5; border-radius:9px;
     background:#fff; color:#4A6358; font-size:13px; font-weight:700;
@@ -985,7 +1223,7 @@ const VEHICLES_CSS = `
   }
   .veh-btn-ghost:hover { background:#F4F6F5; border-color:#CBD5CE; }
 
-  /* ── FORMULAIRE ── */
+  /* FORMULAIRE */
   .veh-field-err { font-size:10px; color:#E11D48; font-weight:600; margin-top:3px; display:flex; align-items:center; gap:3px; }
   .veh-notes-textarea {
     width:100%; resize:vertical; font-family:inherit; font-size:12px;
@@ -996,7 +1234,7 @@ const VEHICLES_CSS = `
   .veh-notes-textarea:focus { border-color:#1B5E37; box-shadow:0 0 0 3px rgba(27,94,55,.1); }
   .veh-notes-textarea::placeholder { color:#B0BDB8; }
 
-  /* ── PAGINATION ── */
+  /* PAGINATION */
   .veh-page-btn {
     width:34px; height:34px; border-radius:8px; border:1.5px solid #E2E8E5;
     background:#fff; color:#4A6358; font-size:13px; font-weight:700;
@@ -1007,7 +1245,6 @@ const VEHICLES_CSS = `
   .veh-page-btn--active { background:#1B5E37; border-color:#1B5E37; color:#fff; }
   .veh-page-btn:disabled { opacity:.4; cursor:not-allowed; }
 
-  /* ── DATE / TIME ── */
   input[type="date"], input[type="time"] { color-scheme:light; color:#1A2820 !important; background:#fff !important; }
   input[type="date"]::-webkit-calendar-picker-indicator,
   input[type="time"]::-webkit-calendar-picker-indicator { filter:invert(25%) sepia(40%) saturate(400%) hue-rotate(120deg); cursor:pointer; opacity:.8; }
@@ -1020,7 +1257,6 @@ const VEHICLES_CSS = `
 export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: externalLoading }) {
   const toast = useToast();
 
-  // ── État ──
   const [search,     setSearch]     = useState("");
   const [filterSt,   setFilterSt]   = useState("");
   const [filterCat,  setFilterCat]  = useState("");
@@ -1038,18 +1274,15 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
   const [page,       setPage]       = useState(1);
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
-  // Tri tableau
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
 
-  // ── Chargement directors ──
   useEffect(() => {
     apiFetch("/auth/users/?role=PERSONNEL&personnel_type=DIRECTEUR")
       .then(r => setDirectors(Array.isArray(r) ? r : r?.results ?? []))
       .catch(() => {});
   }, []);
 
-  // ── Raccourcis clavier globaux ──
   useEffect(() => {
     const handler = e => {
       if (e.key === "Escape" && !showForm && !detailVeh && !confirmDel && !photoView) return;
@@ -1062,10 +1295,8 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
     return () => document.removeEventListener("keydown", handler);
   }, [showForm, detailVeh, confirmDel, photoView]);
 
-  // ── Enrichissement avec alertes ──
   const vehicles = (rawVehicles || []).map(v => ({ ...v, _alerts: computeAlerts(v) }));
 
-  // ── Filtrage ──
   const filtered = vehicles.filter(v => {
     const q  = search.toLowerCase();
     const ms = !q || [v.registration_number, v.make, v.model, v.internal_code, v.assigned_director]
@@ -1076,7 +1307,6 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
       && (!filterAsgn || getAssignmentType(v) === filterAsgn);
   });
 
-  // ── Tri ──
   const sorted = [...filtered].sort((a, b) => {
     if (!sortKey) return 0;
     let va = a[sortKey]; let vb = b[sortKey];
@@ -1087,7 +1317,6 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
     return 0;
   });
 
-  // ── Pagination ──
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
   const paginated  = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -1098,10 +1327,8 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
     setPage(1);
   };
 
-  // Reset page sur filtre
   useEffect(() => { setPage(1); }, [search, filterSt, filterCat, filterAsgn]);
 
-  // ── Actions formulaire ──
   const openAdd  = () => { setEditVeh(null); setShowForm(true); setFormErr(""); };
   const openEdit = v  => { setEditVeh(v);   setShowForm(true); setFormErr(""); };
   const closeForm = () => { setShowForm(false); setEditVeh(null); setFormErr(""); };
@@ -1123,7 +1350,7 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
       }
       closeForm();
       await onRefresh();
-      toast({ type: "success", title: editVeh ? "Véhicule modifié ✓" : "Véhicule ajouté ✓", message: `${data.make} ${data.model} (${data.registration_number}) a été ${editVeh ? "mis à jour" : "ajouté au parc"}.` });
+      toast({ type: "success", title: editVeh ? "Véhicule modifié" : "Véhicule ajouté", message: `${data.make} ${data.model} (${data.registration_number}) a été ${editVeh ? "mis à jour" : "ajouté au parc"}.` });
     } catch (e) {
       const msg = parseApiError(e.message || e.toString(), editVeh ? "modification" : "ajout");
       setFormErr(msg);
@@ -1155,13 +1382,11 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
     finally { setExportingXlsx(false); }
   };
 
-  // ── Statistiques ──
   const pool        = vehicles.filter(v => getAssignmentType(v) === "POOL");
   const fonction    = vehicles.filter(v => getAssignmentType(v) === "FONCTION");
   const busScolaire = vehicles.filter(v => getAssignmentType(v) === "BUS_SCOLAIRE");
   const alertCount  = vehicles.filter(v => v._alerts?.some(a => a.level === "danger")).length;
 
-  // ── Colonnes tableau ──
   const TABLE_COLS = [
     { key: null,                label: "Photo",          sortable: false },
     { key: "registration_number", label: "Immatriculation", sortable: true  },
@@ -1176,11 +1401,18 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
     { key: null,                label: "Actions",        sortable: false },
   ];
 
+  // Icônes Lucide pour les stat cards d'affectation
+  const ASGN_CARDS = [
+    { id: "POOL",         Icon: Car,   label: "Parc commun",       count: pool.filter(v => v.status === "DISPONIBLE").length, total: pool.length,        sub: "disponibles", color: "#1B5E37", bg: "#EAF4EE" },
+    { id: "FONCTION",     Icon: Star,  label: "Voitures de fonction", count: fonction.length, total: null,                     sub: "assignées",           color: "#7C3AED", bg: "#F5F3FF" },
+    { id: "BUS_SCOLAIRE", Icon: Bus,   label: "Bus scolaires",     count: busScolaire.length, total: null,                   sub: "ramassage matin",     color: "#1D4ED8", bg: "#EFF6FF" },
+  ];
+
   return (
     <>
       <style>{VEHICLES_CSS}</style>
 
-      {/* ── MODALS ── */}
+      {/* MODALS */}
       {confirmDel && (
         <ConfirmDialog
           title="Supprimer ce véhicule ?"
@@ -1205,8 +1437,10 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
             <button
               onClick={() => setPhotoView(null)}
               aria-label="Fermer la photo"
-              style={{ position: "absolute", top: -14, right: -14, width: 34, height: 34, borderRadius: "50%", background: "#C0182A", color: "#fff", border: "none", fontSize: 16, cursor: "pointer", fontWeight: 800 }}
-            >✕</button>
+              style={{ position: "absolute", top: -14, right: -14, width: 34, height: 34, borderRadius: "50%", background: "#C0182A", color: "#fff", border: "none", cursor: "pointer", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <X size={16} />
+            </button>
           </div>
         </div>
       )}
@@ -1232,13 +1466,13 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
 
       <div style={S.section}>
 
-        {/* ── BANNIÈRE ALERTES GLOBALES ── */}
+        {/* BANNIÈRE ALERTES GLOBALES */}
         {alertCount > 0 && (
           <div
             role="alert"
             style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "#FDF0F1", border: "1.5px solid #FECDD3", borderRadius: 12, marginBottom: 16 }}
           >
-            <span style={{ fontSize: 20 }}>🔴</span>
+            <AlertCircle size={20} color="#BE123C" />
             <div>
               <div style={{ fontSize: 13, fontWeight: 800, color: "#BE123C" }}>
                 {alertCount} véhicule{alertCount > 1 ? "s" : ""} nécessite{alertCount > 1 ? "nt" : ""} une attention urgente
@@ -1250,47 +1484,50 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
           </div>
         )}
 
-        {/* ── STAT CARDS ── */}
+        {/* STAT CARDS */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }} role="list" aria-label="Statistiques du parc">
-          {[
-            { id: "POOL", icon: "🚗", label: "Parc commun", count: pool.filter(v => v.status === "DISPONIBLE").length, total: pool.length, sub: "disponibles", color: "#1B5E37", bg: "#EAF4EE" },
-            { id: "FONCTION", icon: "🎖️", label: "Voitures de fonction", count: fonction.length, total: null, sub: "assignées", color: "#7C3AED", bg: "#F5F3FF" },
-            { id: "BUS_SCOLAIRE", icon: "🚌", label: "Bus scolaires", count: busScolaire.length, total: null, sub: "ramassage matin", color: "#1D4ED8", bg: "#EFF6FF" },
-          ].map(card => (
-            <div
-              key={card.id}
-              className="veh-stat-card"
-              role="listitem"
-              tabIndex={0}
-              aria-label={`${card.label} : ${card.count}${card.total !== null ? "/" + card.total : ""} ${card.sub}`}
-              aria-pressed={filterAsgn === card.id}
-              onClick={() => setFilterAsgn(filterAsgn === card.id ? "" : card.id)}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilterAsgn(filterAsgn === card.id ? "" : card.id); } }}
-              style={{ background: filterAsgn === card.id ? card.bg : "#fff", border: `1.5px solid ${filterAsgn === card.id ? card.color : "#E8EDEB"}` }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: card.color, textTransform: "uppercase", letterSpacing: "1px" }}>
-                  <span aria-hidden="true">{card.icon}</span> {card.label}
+          {ASGN_CARDS.map(card => {
+            const CardIcon = card.Icon;
+            return (
+              <div
+                key={card.id}
+                className="veh-stat-card"
+                role="listitem"
+                tabIndex={0}
+                aria-label={`${card.label} : ${card.count}${card.total !== null ? "/" + card.total : ""} ${card.sub}`}
+                aria-pressed={filterAsgn === card.id}
+                onClick={() => setFilterAsgn(filterAsgn === card.id ? "" : card.id)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilterAsgn(filterAsgn === card.id ? "" : card.id); } }}
+                style={{ background: filterAsgn === card.id ? card.bg : "#fff", border: `1.5px solid ${filterAsgn === card.id ? card.color : "#E8EDEB"}` }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: card.color, textTransform: "uppercase", letterSpacing: "1px", display: "flex", alignItems: "center", gap: 5 }}>
+                    <CardIcon size={14} aria-hidden="true" /> {card.label}
+                  </div>
+                  {filterAsgn === card.id && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setFilterAsgn(""); }}
+                      aria-label="Supprimer le filtre"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: card.color, fontWeight: 800, display: "flex", alignItems: "center" }}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
-                {filterAsgn === card.id && (
-                  <button
-                    onClick={e => { e.stopPropagation(); setFilterAsgn(""); }}
-                    aria-label="Supprimer le filtre"
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: card.color, fontWeight: 800 }}
-                  >✕</button>
-                )}
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#1A2820", lineHeight: 1 }}>
+                  {card.count}
+                  {card.total !== null && <span style={{ fontSize: 13, color: "#8EA99A", fontWeight: 500 }}>/{card.total}</span>}
+                </div>
+                <div style={{ fontSize: 10, color: card.color, fontWeight: 600, marginTop: 4 }}>{card.sub}</div>
               </div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: "#1A2820", lineHeight: 1 }}>
-                {card.count}
-                {card.total !== null && <span style={{ fontSize: 13, color: "#8EA99A", fontWeight: 500 }}>/{card.total}</span>}
-              </div>
-              <div style={{ fontSize: 10, color: card.color, fontWeight: 600, marginTop: 4 }}>{card.sub}</div>
-            </div>
-          ))}
+            );
+          })}
 
           {VEHICLE_CATEGORIES.map(([cat, label, icon]) => {
             const t = vehicles.filter(v => v.category === cat).length;
             const d = vehicles.filter(v => v.category === cat && v.status === "DISPONIBLE").length;
+            // Icône Lucide selon catégorie
+            const CatIcon = cat === "BUS" ? Bus : cat === "UTILITAIRE" ? Briefcase : Car;
             return (
               <div
                 key={cat}
@@ -1303,8 +1540,8 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilterCat(filterCat === cat ? "" : cat); setFilterAsgn(""); } }}
                 style={{ background: filterCat === cat ? "#EAF4EE" : "#fff", border: `1.5px solid ${filterCat === cat ? "#1B5E37" : "#E8EDEB"}` }}
               >
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#8EA99A", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>
-                  <span aria-hidden="true">{icon}</span> {label}
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8EA99A", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+                  <CatIcon size={14} aria-hidden="true" /> {label}
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: "#1A2820", lineHeight: 1 }}>
                   {d}<span style={{ fontSize: 12, color: "#8EA99A", fontWeight: 500 }}>/{t}</span>
@@ -1315,14 +1552,12 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
           })}
         </div>
 
-        {/* ── BARRE FILTRES ── */}
+        {/* BARRE FILTRES */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {/* Recherche */}
             <div style={{ position: "relative" }}>
-              <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#8EA99A" }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
+              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#8EA99A" }} />
               <input
                 id="veh-search"
                 placeholder="Rechercher… (Ctrl+F)"
@@ -1347,14 +1582,17 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
             {/* Filtre affectation actif */}
             {filterAsgn && (() => {
               const m = ASGN_META[filterAsgn];
+              const FIcon = m.Icon;
               return (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: m.bg, color: m.color }}>
-                  <span aria-hidden="true">{m.icon}</span> {m.label}
+                  <FIcon size={12} aria-hidden="true" /> {m.label}
                   <button
                     onClick={() => setFilterAsgn("")}
                     aria-label={`Supprimer le filtre ${m.label}`}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "inherit", fontWeight: 800, padding: "0 0 0 4px" }}
-                  >✕</button>
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontWeight: 800, padding: "0 0 0 4px", display: "flex", alignItems: "center" }}
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               );
             })()}
@@ -1365,12 +1603,14 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {/* Export PDF */}
+            {/* Export PDF liste */}
             <button
               className="veh-export-btn veh-export-btn--pdf"
               onClick={() => exportPDF(filtered)}
               aria-label="Exporter la liste en PDF"
-            >📄 PDF</button>
+            >
+              <Printer size={14} /> PDF
+            </button>
 
             {/* Export Excel */}
             <button
@@ -1379,7 +1619,11 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
               disabled={exportingXlsx}
               aria-label="Exporter la liste en Excel"
             >
-              {exportingXlsx ? "⟳" : "📊"} Excel
+              {exportingXlsx
+                ? <RefreshCw size={14} style={{ animation: "veh-spin .8s linear infinite" }} />
+                : <FileText size={14} />
+              }
+              Excel
             </button>
 
             {/* Toggle vue */}
@@ -1398,13 +1642,18 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
               ><IconList /></button>
             </div>
 
-            <button onClick={openAdd} style={S.btn} aria-label="Ajouter un nouveau véhicule">
-              <span aria-hidden="true" style={{ fontSize: 16, marginRight: 4 }}>+</span> Ajouter un véhicule
+            {/* Bouton ajouter */}
+            <button
+              onClick={openAdd}
+              aria-label="Ajouter un nouveau véhicule"
+              style={{ ...S.btn, background: "#1a5d3b", borderColor: "#1a5d3b", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={16} /> Ajouter un véhicule
             </button>
           </div>
         </div>
 
-        {/* ── CONTENU ── */}
+        {/* CONTENU */}
         {externalLoading
           ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18 }}>
@@ -1456,50 +1705,95 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
                           const catInfo  = VEHICLE_CATEGORIES.find(([c]) => c === v.category);
                           const asgnMeta = ASGN_META[getAssignmentType(v)] || ASGN_META.POOL;
                           const isHS     = v.status === "HORS_SERVICE";
+                          const AsgnIcon = asgnMeta.Icon;
+                          const CatIcon  = v.category === "BUS" ? Bus : v.category === "UTILITAIRE" ? Briefcase : Car;
                           return (
                             <tr key={v.id} className={`tr-row-veh${isHS ? " tr-hors-service" : ""}`}>
                               <td style={S.td}>
                                 {photoUrl
                                   ? <img src={photoUrl} alt="" onClick={() => setPhotoView(photoUrl)} style={{ width: 52, height: 38, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.border}`, filter: isHS ? "grayscale(80%)" : "" }} />
-                                  : <div style={{ width: 52, height: 38, borderRadius: 8, background: isHS ? "#E5E7EB" : "#EAF4EE", border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, opacity: isHS ? .5 : 1 }} aria-hidden="true">{catInfo?.[2] ?? "🚗"}</div>
+                                  : <div style={{ width: 52, height: 38, borderRadius: 8, background: isHS ? "#E5E7EB" : "#EAF4EE", border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", opacity: isHS ? .5 : 1 }}>
+                                      <CatIcon size={20} color={isHS ? "#9CA3AF" : "#1B5E37"} />
+                                    </div>
                                 }
                               </td>
                               <td style={S.td}><b style={{ color: isHS ? "#9CA3AF" : C.text, fontSize: 13 }}>{v.registration_number}</b></td>
                               <td style={S.td}><span style={{ ...S.typeBadge, opacity: isHS ? .6 : 1 }}>{v.internal_code}</span></td>
                               <td style={S.td}>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: isHS ? "#F3F4F6" : asgnMeta.bg, color: isHS ? "#9CA3AF" : asgnMeta.color }}>
-                                  <span aria-hidden="true">{isHS ? "🚫" : asgnMeta.icon}</span> {isHS ? "Immobilisé" : asgnMeta.label}
+                                  {isHS ? <Ban size={10} /> : <AsgnIcon size={10} />}
+                                  {isHS ? "Immobilisé" : asgnMeta.label}
                                 </span>
                                 {v.assigned_director && <div style={{ fontSize: 10, color: C.textLight, marginTop: 2 }}>{v.assigned_director}</div>}
                               </td>
                               <td style={S.td}>
-                                <span aria-hidden="true" style={{ fontSize: 16, opacity: isHS ? .4 : 1 }}>{catInfo?.[2]}</span>
-                                <span style={{ fontSize: 11, color: isHS ? "#9CA3AF" : C.textMid, marginLeft: 4 }}>{catInfo?.[1] ?? v.category}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                  <CatIcon size={16} color={isHS ? "#9CA3AF" : "#4A6358"} />
+                                  <span style={{ fontSize: 11, color: isHS ? "#9CA3AF" : C.textMid }}>{catInfo?.[1] ?? v.category}</span>
+                                </div>
                               </td>
                               <td style={S.td}>
                                 <div style={{ fontWeight: 600, color: isHS ? "#9CA3AF" : C.text }}>{v.make} {v.model}</div>
                                 <div style={{ fontSize: 10, color: C.textLight }}>{v.year} · {v.color}</div>
                               </td>
-                              <td style={S.td}><span style={{ fontSize: 11, color: C.textMid }}>{FUEL_TYPES.find(([k]) => k === v.fuel_type)?.[1] || v.fuel_type}</span></td>
-                              <td style={S.td}>{v.seating_capacity} pl.</td>
                               <td style={S.td}>
-                                <span style={{ fontWeight: 600, color: isHS ? "#9CA3AF" : "inherit" }}>{Number(v.current_mileage || 0).toLocaleString("fr-FR")}</span>
-                                <span style={{ fontSize: 10, color: C.textLight }}> km</span>
-                                {v._alerts?.length > 0 && !isHS && <div style={{ fontSize: 9, color: "#C0182A", fontWeight: 700, marginTop: 2 }}>⚠️ {v._alerts.length} alerte{v._alerts.length > 1 ? "s" : ""}</div>}
+                                <span style={{ fontSize: 11, color: C.textMid, display: "flex", alignItems: "center", gap: 4 }}>
+                                  <Fuel size={12} />
+                                  {FUEL_TYPES.find(([k]) => k === v.fuel_type)?.[1] || v.fuel_type}
+                                </span>
+                              </td>
+                              <td style={S.td}>
+                                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <Users size={12} color={C.textLight} />
+                                  {v.seating_capacity} pl.
+                                </span>
+                              </td>
+                              <td style={S.td}>
+                                <span style={{ fontWeight: 600, color: isHS ? "#9CA3AF" : "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <Gauge size={12} color={C.textLight} />
+                                  {Number(v.current_mileage || 0).toLocaleString("fr-FR")}
+                                  <span style={{ fontSize: 10, color: C.textLight }}> km</span>
+                                </span>
+                                {v._alerts?.length > 0 && !isHS && (
+                                  <div style={{ fontSize: 9, color: "#C0182A", fontWeight: 700, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
+                                    <AlertTriangle size={9} /> {v._alerts.length} alerte{v._alerts.length > 1 ? "s" : ""}
+                                  </div>
+                                )}
                               </td>
                               <td style={S.td}>
                                 {isHS
-                                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#F3F4F6", color: "#6B7280" }}><span aria-hidden="true">🚫</span> Hors service</span>
+                                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#F3F4F6", color: "#6B7280" }}>
+                                      <Ban size={10} /> Hors service
+                                    </span>
                                   : <StatusBadge status={v.status} />
                                 }
                               </td>
                               <td style={S.td}>
                                 <div style={{ display: "flex", gap: 5 }}>
-                                  <button onClick={() => setDetailVeh(v)} aria-label={`Fiche de ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#F0FDF4", color: "#15803D", fontFamily: "inherit" }}>📋</button>
-                                  {photoUrl && <button onClick={() => setPhotoView(photoUrl)} aria-label="Voir la photo" style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#EAF4EE", color: C.green, fontFamily: "inherit" }}>👁</button>}
-                                  <button onClick={() => openEdit(v)} aria-label={`Modifier ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#EFF6FF", color: C.blue, fontFamily: "inherit" }}>Modifier</button>
-                                  <button onClick={() => handleDeleteRequest(v)} disabled={deleting === v.id} aria-label={`Supprimer ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#FDF0F1", color: C.red, fontFamily: "inherit", opacity: deleting === v.id ? .6 : 1 }}>
-                                    {deleting === v.id ? "…" : "Suppr."}
+                                  <button
+                                    onClick={() => exportPDFSingle(v)}
+                                    aria-label={`Exporter la fiche PDF de ${v.make} ${v.model}`}
+                                    title="Fiche PDF"
+                                    style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#FFF7ED", color: "#C2410C", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}
+                                  >
+                                    <Printer size={12} />
+                                  </button>
+                                  <button onClick={() => setDetailVeh(v)} aria-label={`Fiche de ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#F0FDF4", color: "#15803D", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
+                                    <ClipboardList size={12} />
+                                  </button>
+                                  {photoUrl && (
+                                    <button onClick={() => setPhotoView(photoUrl)} aria-label="Voir la photo" style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#EAF4EE", color: C.green, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
+                                      <Eye size={12} />
+                                    </button>
+                                  )}
+                                  <button onClick={() => openEdit(v)} aria-label={`Modifier ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#EFF6FF", color: C.blue, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
+                                    <Pencil size={12} />
+                                  </button>
+                                  <button onClick={() => handleDeleteRequest(v)} disabled={deleting === v.id} aria-label={`Supprimer ${v.make} ${v.model}`} style={{ padding: "4px 9px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "#FDF0F1", color: C.red, fontFamily: "inherit", opacity: deleting === v.id ? .6 : 1, display: "flex", alignItems: "center", gap: 3 }}>
+                                    {deleting === v.id
+                                      ? <RefreshCw size={12} style={{ animation: "veh-spin .8s linear infinite" }} />
+                                      : <Trash2 size={12} />
+                                    }
                                   </button>
                                 </div>
                               </td>
@@ -1511,7 +1805,7 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
                   </div>
                 )}
 
-                {/* ── PAGINATION ── */}
+                {/* PAGINATION */}
                 {totalPages > 1 && (
                   <nav aria-label="Pagination" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20 }}>
                     <button
@@ -1519,7 +1813,9 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={safePage === 1}
                       aria-label="Page précédente"
-                    >‹</button>
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
                       .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
                       .reduce((acc, p, i, arr) => {
@@ -1546,7 +1842,9 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={safePage === totalPages}
                       aria-label="Page suivante"
-                    >›</button>
+                    >
+                      <ChevronRight size={16} />
+                    </button>
                     <span style={{ fontSize: 12, color: "#8EA99A", marginLeft: 4 }}>
                       {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} / {filtered.length}
                     </span>
@@ -1561,7 +1859,7 @@ export function TabVehicules({ vehicles: rawVehicles, onRefresh, loading: extern
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13. MODAL VÉHICULE (formulaire — refactorisé avec useVehicleForm)
+// 13. MODAL VÉHICULE (formulaire)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function VehiculeModal({ initial, onSave, onClose, saving, error, directors }) {
@@ -1601,7 +1899,6 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
       .catch(() => {});
   }, []);
 
-  // Raccourci Escape avec confirmation si modifié
   useEffect(() => {
     const handler = e => {
       if (e.key === "Escape") {
@@ -1648,7 +1945,6 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
     onSave(clean, photoFile, routePayload);
   };
 
-  // Ref pour raccourci Ctrl+S
   const handleSubmitRef = useRef(handleSubmit);
   useEffect(() => { handleSubmitRef.current = handleSubmit; }, [handleSubmit]);
 
@@ -1664,9 +1960,14 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
     width: "100%", outline: "none", boxSizing: "border-box", transition: "border-color .15s", ...extra,
   });
   const lbl = { fontSize: 10, fontWeight: 700, color: "#4A6358", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4, display: "block" };
+
   const ErrMsg = ({ field }) => touched[field] && fieldErrors[field]
-    ? <div className="veh-field-err" role="alert"><span aria-hidden="true">⚠</span>{fieldErrors[field]}</div>
-    : null;
+    ? (
+      <div className="veh-field-err" role="alert">
+        <AlertTriangle size={10} aria-hidden="true" />
+        {fieldErrors[field]}
+      </div>
+    ) : null;
 
   return (
     <div
@@ -1686,26 +1987,32 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {isDirty && !isEdit && (
-              <span style={{ fontSize: 11, color: "#D97706", fontWeight: 600, background: "#FFFBEB", padding: "3px 8px", borderRadius: 6 }}>
-                ● Brouillon en cours
+              <span style={{ fontSize: 11, color: "#D97706", fontWeight: 600, background: "#FFFBEB", padding: "3px 8px", borderRadius: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                <Activity size={11} /> Brouillon en cours
               </span>
             )}
-            <button onClick={handleClose} aria-label="Fermer le formulaire" style={M.closeBtn}>✕</button>
+            <button onClick={handleClose} aria-label="Fermer le formulaire" style={M.closeBtn}>
+              <X size={16} />
+            </button>
           </div>
         </div>
 
-        {/* Bannière restauration brouillon */}
+        {/* Bannière brouillon */}
         {showDraftBanner && !isEdit && (
           <div style={{ background: "#FFFBEB", borderBottom: "1px solid #FDE68A", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "#92400E", fontWeight: 600 }}>📝 Un brouillon non enregistré a été restauré.</span>
-            <button onClick={() => { clearDraft(); setForm(buildEmptyForm(null)); setShowDraftBanner(false); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#92400E", fontWeight: 700, textDecoration: "underline" }}>Effacer le brouillon</button>
+            <span style={{ fontSize: 12, color: "#92400E", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+              <BookOpen size={13} /> Un brouillon non enregistré a été restauré.
+            </span>
+            <button onClick={() => { clearDraft(); setForm(buildEmptyForm(null)); setShowDraftBanner(false); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#92400E", fontWeight: 700, textDecoration: "underline" }}>
+              Effacer le brouillon
+            </button>
           </div>
         )}
 
         {/* Bannière hors service */}
         {isEdit && isHorsService && (
           <div style={{ background: "#F3F4F6", borderBottom: "2px solid #9CA3AF", padding: "10px 16px", display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={{ fontSize: 20 }} aria-hidden="true">🚫</span>
+            <Ban size={20} color="#6B7280" />
             <div>
               <div style={{ fontSize: 12, fontWeight: 800, color: "#374151" }}>Ce véhicule est actuellement HORS SERVICE</div>
               <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Changez le statut pour le remettre en service.</div>
@@ -1715,15 +2022,15 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
 
         {/* Erreur API */}
         {error && (
-          <div role="alert" style={{ background: "#FFF1F2", borderBottom: "1px solid #FECDD3", padding: "10px 16px", display: "flex", gap: 8, fontSize: 12, color: "#BE123C", alignItems: "flex-start" }}>
-            <span aria-hidden="true" style={{ fontSize: 16 }}>⚠️</span>
-            <div><b>Erreur :</b> {error}</div>
+          <div role="alert" style={{ background: "#FFF1F2", borderBottom: "1px solid #FECDD3", padding: "12px 16px", display: "flex", gap: 8, fontSize: 12, color: "#BE123C", alignItems: "flex-start" }}>
+            <XCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ lineHeight: 1.6 }}>{error}</div>
           </div>
         )}
 
         <form onSubmit={handleSubmit} noValidate style={M.body}>
 
-          {/* ── PHOTO ── */}
+          {/* PHOTO */}
           <div style={M.secTitle}>Photo du véhicule</div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div
@@ -1736,27 +2043,34 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             >
               {photoPreview
                 ? <img src={photoPreview} alt="Aperçu de la photo" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isHorsService ? "grayscale(60%)" : "" }} />
-                : <div style={{ textAlign: "center", color: "#8EA99A" }}><div style={{ fontSize: 28 }} aria-hidden="true">📷</div><div style={{ fontSize: 10, marginTop: 4 }}>Cliquer</div></div>
+                : <div style={{ textAlign: "center", color: "#8EA99A", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <Camera size={28} />
+                    <div style={{ fontSize: 10 }}>Cliquer</div>
+                  </div>
               }
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button type="button" onClick={() => fileRef.current?.click()} style={{ ...S.btn, fontSize: 11, padding: "6px 14px" }}>{photoPreview ? "Changer" : "Téléverser"}</button>
+              <button type="button" onClick={() => fileRef.current?.click()} style={{ ...S.btn, fontSize: 11, padding: "6px 14px", display: "flex", alignItems: "center", gap: 5 }}>
+                <Camera size={12} /> {photoPreview ? "Changer" : "Téléverser"}
+              </button>
               {photoPreview && (
-                <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} className="veh-btn-ghost" style={{ fontSize: 11, padding: "6px 14px", color: "#C0182A", borderColor: "#fca5a5" }}>Supprimer</button>
+                <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} className="veh-btn-ghost" style={{ fontSize: 11, padding: "6px 14px", color: "#C0182A", borderColor: "#fca5a5", display: "flex", alignItems: "center", gap: 5 }}>
+                  <Trash2 size={12} /> Supprimer
+                </button>
               )}
               <div style={{ fontSize: 10, color: "#8EA99A" }}>JPG, PNG · max 5 Mo</div>
             </div>
             <input ref={fileRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: "none" }} aria-label="Choisir une photo de véhicule" />
           </div>
 
-          {/* ── AFFECTATION ── */}
+          {/* AFFECTATION */}
           <div style={M.secTitle}>Type d'affectation</div>
           <div style={{ display: "flex", gap: 10 }} role="group" aria-label="Type d'affectation">
             {[
-              { val: "POOL",         icon: "🚗", label: "Parc commun",       desc: "Réservable pour les réservations" },
-              { val: "FONCTION",     icon: "🎖️", label: "Voiture de fonction", desc: "Tourisme — assignée à un directeur" },
-              { val: "BUS_SCOLAIRE", icon: "🚌", label: "Bus scolaire",       desc: "Bus — ramassage matin assigné" },
-            ].map(({ val, icon, label, desc }) => (
+              { val: "POOL",         Icon: Car,  label: "Parc commun",        desc: "Réservable pour les réservations" },
+              { val: "FONCTION",     Icon: Star, label: "Voiture de fonction", desc: "Tourisme — assignée à un directeur" },
+              { val: "BUS_SCOLAIRE", Icon: Bus,  label: "Bus scolaire",        desc: "Bus — ramassage matin assigné" },
+            ].map(({ val, Icon: BtnIcon, label, desc }) => (
               <button
                 key={val}
                 type="button"
@@ -1767,19 +2081,24 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                   category:     val === "FONCTION" ? "TOURISME" : val === "BUS_SCOLAIRE" ? "BUS" : f.category,
                   vehicle_type: val === "FONCTION" ? "BERLINE"  : val === "BUS_SCOLAIRE" ? "MINIBUS" : f.vehicle_type,
                 }))}
-                style={{ flex: 1, padding: "12px 8px", borderRadius: 10, cursor: "pointer", border: `2px solid ${form.assignment_type === val ? val === "FONCTION" ? C.purple : val === "BUS_SCOLAIRE" ? C.blue : C.green : C.border}`, background: form.assignment_type === val ? val === "FONCTION" ? C.purpleLight : val === "BUS_SCOLAIRE" ? C.blueLight : C.greenLight : C.bg, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all .15s" }}
+                style={{ flex: 1, padding: "12px 8px", borderRadius: 10, cursor: "pointer", border: `2px solid ${form.assignment_type === val ? val === "FONCTION" ? C.purple : val === "BUS_SCOLAIRE" ? C.blue : C.green : C.border}`, background: form.assignment_type === val ? val === "FONCTION" ? C.purpleLight : val === "BUS_SCOLAIRE" ? C.blueLight : C.greenLight : C.bg, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, transition: "all .15s" }}
               >
-                <span style={{ fontSize: 24 }} aria-hidden="true">{icon}</span>
+                <BtnIcon
+                  size={28}
+                  color={form.assignment_type === val ? val === "FONCTION" ? C.purple : val === "BUS_SCOLAIRE" ? C.blue : C.green : C.textMid}
+                />
                 <span style={{ fontSize: 11, fontWeight: 700, color: form.assignment_type === val ? val === "FONCTION" ? C.purple : val === "BUS_SCOLAIRE" ? C.blue : C.green : C.textMid }}>{label}</span>
                 <span style={{ fontSize: 10, color: C.textLight, textAlign: "center", lineHeight: 1.3 }}>{desc}</span>
               </button>
             ))}
           </div>
 
-          {/* ── VOITURE DE FONCTION ── */}
+          {/* VOITURE DE FONCTION */}
           {isFonction && (
             <div style={{ background: C.purpleLight, border: `1.5px solid ${C.purple}30`, borderRadius: 9, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
-              <div style={{ fontSize: 11, color: C.purple, fontWeight: 700 }}>🎖️ Voiture de fonction — assignée à un directeur de l'institution.</div>
+              <div style={{ fontSize: 11, color: C.purple, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                <Star size={13} /> Voiture de fonction — assignée à un directeur de l'institution.
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.8px" }} htmlFor="sel-director">
                   Directeur assigné <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span>
@@ -1806,19 +2125,29 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                 </select>
                 <ErrMsg field="assigned_director_id" />
               </div>
-              {form.assigned_director && <div style={{ fontSize: 11, color: C.purple, fontWeight: 600 }}>✓ Assigné à : {form.assigned_director}</div>}
+              {form.assigned_director && (
+                <div style={{ fontSize: 11, color: C.purple, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                  <Check size={12} /> Assigné à : {form.assigned_director}
+                </div>
+              )}
             </div>
           )}
 
-          {/* ── BUS SCOLAIRE ── */}
+          {/* BUS SCOLAIRE */}
           {isBusScolaire && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
               <div style={{ background: C.blueLight, border: `1.5px solid ${C.blue}30`, borderRadius: 9, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}>🚌 Bus scolaire — dédié au ramassage du matin.</div>
+                <div style={{ fontSize: 11, color: C.blue, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Bus size={13} /> Bus scolaire — dédié au ramassage du matin.
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <label htmlFor="sel-chauffeur" style={{ fontSize: 11, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.8px" }}>Chauffeur bus assigné</label>
                   {busChauffeurs.length === 0
-                    ? <div style={{ fontSize: 11, color: C.amber, background: C.amberLight, borderRadius: 7, padding: "8px 12px" }}>Aucun chauffeur de type "Bus scolaire" enregistré.</div>
+                    ? (
+                      <div style={{ fontSize: 11, color: C.amber, background: C.amberLight, borderRadius: 7, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+                        <AlertTriangle size={12} /> Aucun chauffeur de type "Bus scolaire" enregistré.
+                      </div>
+                    )
                     : (
                       <select
                         id="sel-chauffeur"
@@ -1849,7 +2178,9 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
 
               {/* Sélection ligne */}
               <div style={{ border: `1.5px solid ${C.amber}`, borderRadius: 10, padding: 16, background: C.amberLight }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 14 }}>🚌 Trajet de ramassage</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Route size={13} /> Trajet de ramassage
+                </div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 14 }} role="group" aria-label="Choix de la ligne">
                   {Object.entries(BUS_LIGNES).map(([ligne, info]) => (
                     <button
@@ -1867,13 +2198,15 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                 <div style={{ background: "#fff", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.amber}30` }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {[
-                      { l: "Trajet",     v: BUS_LIGNES[busLigne].nom_trajet },
-                      { l: "Arrivée",    v: "IUC Logbessou" },
-                      { l: "Tours / jour", v: "2 tours" },
-                      { l: "Jours",      v: "Lun → Ven" },
-                    ].map(({ l, v }) => (
+                      { l: "Trajet",       v: BUS_LIGNES[busLigne].nom_trajet, Icon: Navigation },
+                      { l: "Arrivée",      v: "IUC Logbessou",                 Icon: MapPin     },
+                      { l: "Tours / jour", v: "2 tours",                       Icon: RefreshCw  },
+                      { l: "Jours",        v: "Lun → Ven",                     Icon: Calendar   },
+                    ].map(({ l, v, Icon: RowIcon }) => (
                       <div key={l}>
-                        <div style={{ fontSize: 10, color: C.textLight, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 3 }}>{l}</div>
+                        <div style={{ fontSize: 10, color: C.textLight, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                          <RowIcon size={10} /> {l}
+                        </div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v}</div>
                       </div>
                     ))}
@@ -1883,11 +2216,12 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             </div>
           )}
 
-          {/* ── CATÉGORIE ── */}
+          {/* CATÉGORIE */}
           <div style={M.secTitle}>Catégorie du véhicule</div>
           <div style={{ display: "flex", gap: 10 }} role="group" aria-label="Catégorie du véhicule">
-            {VEHICLE_CATEGORIES.map(([cat, label, icon]) => {
-              const blocked = (isFonction && cat !== "TOURISME") || (isBusScolaire && cat !== "BUS");
+            {VEHICLE_CATEGORIES.map(([cat, label]) => {
+              const blocked  = (isFonction && cat !== "TOURISME") || (isBusScolaire && cat !== "BUS");
+              const CatIcon  = cat === "BUS" ? Bus : cat === "UTILITAIRE" ? Briefcase : Car;
               return (
                 <button
                   key={cat}
@@ -1898,19 +2232,19 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                   onClick={() => !blocked && setForm(f => ({ ...f, category: cat }))}
                   style={{ flex: 1, padding: "14px 10px", borderRadius: 10, cursor: blocked ? "not-allowed" : "pointer", border: `2px solid ${form.category === cat ? C.green : blocked ? "#E8E8E8" : C.border}`, background: form.category === cat ? C.greenLight : blocked ? "#F5F5F5" : C.bg, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, transition: "all .15s", opacity: blocked ? .4 : 1 }}
                 >
-                  <span style={{ fontSize: 28 }} aria-hidden="true">{icon}</span>
+                  <CatIcon size={28} color={form.category === cat ? C.green : blocked ? "#BBB" : C.textMid} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: form.category === cat ? C.green : blocked ? "#BBB" : C.textMid }}>{label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* ── IDENTIFICATION ── */}
+          {/* IDENTIFICATION */}
           <div style={M.secTitle}>Identification</div>
           <div style={M.grid2}>
             <div>
               <label htmlFor="f-reg" style={lbl}>Immatriculation <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span></label>
-              <input id="f-reg" value={form.registration_number} onChange={set("registration_number")} onBlur={() => touch("registration_number")} placeholder="Ex: LT 001 07" style={inp("registration_number")} aria-required="true" aria-describedby={fieldErrors.registration_number ? "err-reg" : undefined} />
+              <input id="f-reg" value={form.registration_number} onChange={set("registration_number")} onBlur={() => touch("registration_number")} placeholder="Ex: LT 001 07" style={inp("registration_number")} aria-required="true" />
               <ErrMsg field="registration_number" />
             </div>
             <div>
@@ -1920,7 +2254,7 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             </div>
           </div>
 
-          {/* ── CARACTÉRISTIQUES ── */}
+          {/* CARACTÉRISTIQUES */}
           <div style={M.secTitle}>Caractéristiques</div>
           <div style={M.grid2}>
             <div>
@@ -1965,38 +2299,51 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             </div>
           </div>
 
-          {/* ── CAPACITÉS & KILOMÉTRAGE ── */}
+          {/* CAPACITÉS & KILOMÉTRAGE */}
           <div style={M.secTitle}>Capacités & Kilométrage</div>
           <div style={M.grid3}>
             <div>
-              <label htmlFor="f-seats" style={lbl}>Nb places <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span></label>
+              <label htmlFor="f-seats" style={lbl}>
+                <Users size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Nb places <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span>
+              </label>
               <input id="f-seats" type="number" value={form.seating_capacity} onChange={set("seating_capacity")} onBlur={() => touch("seating_capacity")} min="1" max="100" style={inp("seating_capacity")} aria-required="true" />
               <ErrMsg field="seating_capacity" />
             </div>
             <div>
-              <label htmlFor="f-tank" style={lbl}>Réservoir (L) <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span></label>
+              <label htmlFor="f-tank" style={lbl}>
+                <Fuel size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Réservoir (L) <span style={{ color: "#E11D48" }} aria-label="Obligatoire">*</span>
+              </label>
               <input id="f-tank" type="number" value={form.fuel_tank_capacity} onChange={set("fuel_tank_capacity")} onBlur={() => touch("fuel_tank_capacity")} step="0.5" min="1" placeholder="60" style={inp("fuel_tank_capacity")} aria-required="true" />
               <ErrMsg field="fuel_tank_capacity" />
             </div>
             <div>
-              <label htmlFor="f-km" style={lbl}>Kilométrage actuel</label>
+              <label htmlFor="f-km" style={lbl}>
+                <Gauge size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Kilométrage actuel
+              </label>
               <input id="f-km" type="number" value={form.current_mileage} onChange={set("current_mileage")} step="1" min="0" style={inp("current_mileage")} />
             </div>
           </div>
 
-          {/* ── STATUT & DATES ── */}
+          {/* STATUT & DATES */}
           <div style={M.secTitle}>Statut & Dates</div>
 
           {isFonction && (
-            <div style={{ fontSize: 11, color: C.purple, background: C.purpleLight, borderRadius: 7, padding: "8px 12px", marginBottom: 8 }}>
-              🎖️ Statut automatiquement défini sur <b>En service</b> pour un véhicule de fonction.
+            <div style={{ fontSize: 11, color: C.purple, background: C.purpleLight, borderRadius: 7, padding: "8px 12px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <Star size={12} /> Statut automatiquement défini sur <b>En service</b> pour un véhicule de fonction.
             </div>
           )}
 
           <div style={{ background: "#F3F4F6", border: "1.5px solid #E5E7EB", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 11, color: "#4B5563", lineHeight: 1.6 }}>
-            <b style={{ color: "#374151" }}>ℹ️ À propos du statut :</b><br />
-            • <b>Disponible</b> — peut être réservé · <b>En service</b> — en mission · <b>En maintenance</b> — chez le mécanicien<br />
-            • <b>Hors service</b> — immobilisé définitivement. Le véhicule <b>reste en base</b> pour l'historique mais n'est plus réservable.
+            <b style={{ color: "#374151", display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+              <Info size={13} /> À propos du statut :
+            </b>
+            <span style={{ color: "#15803D", fontWeight: 700 }}>Disponible</span> — peut être réservé ·{" "}
+            <span style={{ color: "#D97706", fontWeight: 700 }}>En service</span> — en mission ·{" "}
+            <span style={{ color: "#C0182A", fontWeight: 700 }}>En maintenance</span> — chez le mécanicien<br />
+            <span style={{ color: "#6B7280", fontWeight: 700 }}>Hors service</span> — immobilisé définitivement. Le véhicule <b>reste en base</b> pour l'historique mais n'est plus réservable.
           </div>
 
           <div style={M.grid2}>
@@ -2013,10 +2360,15 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                   : VEHICLE_STATUS
                 ).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
-              {isHorsService && <div style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, marginTop: 3 }}>🚫 Ce véhicule ne sera plus disponible à la réservation.</div>}
+              {isHorsService && (
+                <div style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                  <Ban size={10} /> Ce véhicule ne sera plus disponible à la réservation.
+                </div>
+              )}
             </div>
             <div>
               <label htmlFor="f-vin" style={lbl}>
+                <Hash size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
                 N° VIN
                 <span style={{ fontSize: 9, color: (form.vin_number || "").trim().length === 17 ? "#16A34A" : (form.vin_number || "").trim().length > 0 ? "#E11D48" : "#8EA99A", fontWeight: 500, marginLeft: 6, textTransform: "none", letterSpacing: 0 }}>
                   {(form.vin_number || "").trim().length}/17
@@ -2036,20 +2388,29 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
               <div id="vin-hint" style={{ fontSize: 10, color: "#8EA99A", marginTop: 2 }}>17 caractères (I, O, Q interdits)</div>
             </div>
             <div>
-              <label htmlFor="f-pdate" style={lbl}>Date d'achat</label>
+              <label htmlFor="f-pdate" style={lbl}>
+                <Calendar size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Date d'achat
+              </label>
               <input id="f-pdate" type="date" value={form.purchase_date || ""} onChange={set("purchase_date")} style={inp("purchase_date")} />
             </div>
             <div>
-              <label htmlFor="f-rdate" style={lbl}>Date d'immatriculation</label>
+              <label htmlFor="f-rdate" style={lbl}>
+                <Calendar size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Date d'immatriculation
+              </label>
               <input id="f-rdate" type="date" value={form.registration_date || ""} onChange={set("registration_date")} style={inp("registration_date")} />
             </div>
             <div>
-              <label htmlFor="f-price" style={lbl}>Prix d'achat (FCFA)</label>
+              <label htmlFor="f-price" style={lbl}>
+                <DollarSign size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
+                Prix d'achat (FCFA)
+              </label>
               <input id="f-price" type="number" value={form.purchase_price || ""} onChange={set("purchase_price")} step="1000" min="0" placeholder="Ex: 12 500 000" style={inp("purchase_price")} />
             </div>
           </div>
 
-          {/* ── NOTES ── */}
+          {/* NOTES */}
           <div style={M.secTitle}>Notes</div>
           <label htmlFor="f-notes" style={{ ...lbl, display: "none" }}>Notes et remarques</label>
           <textarea
@@ -2062,10 +2423,12 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             aria-label="Notes et remarques sur le véhicule"
           />
 
-          {/* ── Résumé erreurs ── */}
+          {/* Résumé erreurs */}
           {Object.keys(fieldErrors).length > 0 && (
             <div role="alert" style={{ background: "#FFF8F8", border: "1.5px solid #FECDD3", borderRadius: 9, padding: "12px 14px", marginTop: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#BE123C", marginBottom: 6 }}>⚠️ Corrigez les erreurs suivantes :</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#BE123C", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <AlertTriangle size={14} /> Corrigez les erreurs suivantes :
+              </div>
               <ul style={{ margin: 0, paddingLeft: 16 }}>
                 {Object.values(fieldErrors).map((msg, i) => (
                   <li key={i} style={{ fontSize: 11, color: "#BE123C", marginBottom: 2 }}>{msg}</li>
@@ -2074,7 +2437,7 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
             </div>
           )}
 
-          {/* ── ACTIONS ── */}
+          {/* ACTIONS */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 11, color: "#8EA99A" }}>
               <kbd style={{ background: "#F3F4F6", border: "1px solid #E2E8E5", borderRadius: 4, padding: "2px 6px", fontSize: 10 }}>Ctrl+S</kbd> pour sauvegarder ·{" "}
@@ -2089,8 +2452,10 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
                 aria-busy={saving}
               >
                 {saving
-                  ? <><span style={{ animation: "veh-spin .8s linear infinite", display: "inline-block" }} aria-hidden="true">⟳</span> Enregistrement…</>
-                  : isEdit ? "Enregistrer les modifications" : "Ajouter"
+                  ? <><RefreshCw size={14} style={{ animation: "veh-spin .8s linear infinite" }} /> Enregistrement…</>
+                  : isEdit
+                    ? <><Save size={14} /> Enregistrer les modifications</>
+                    : <><Plus size={14} /> Ajouter</>
                 }
               </button>
             </div>
@@ -2104,7 +2469,6 @@ export function VehiculeModal({ initial, onSave, onClose, saving, error, directo
 // ─────────────────────────────────────────────────────────────────────────────
 // 14. EXPORT : wrapper avec ToastProvider
 // ─────────────────────────────────────────────────────────────────────────────
-// Envelopper TabVehicules dans ToastProvider au niveau de l'app ou ici :
 
 export function VehiculesModule(props) {
   return (

@@ -6,3 +6,4 @@ media/
 static/
 .venv/
 venv/
+logs/
