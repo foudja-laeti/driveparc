@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-const API_BASE = "http://localhost:8000/api/v1/auth";
+const API_BASE = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1/auth`;
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail]       = useState("");
@@ -10,7 +10,7 @@ export default function LoginScreen({ onLogin }) {
   const [error, setError]       = useState("");
 
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:8000/api/v1/auth/social/login/google-oauth2/";
+    window.location.href = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1/auth/social/login/google-oauth2/`;
   };
 
   const handleSubmit = async (e) => {

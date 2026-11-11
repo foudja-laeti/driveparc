@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 
-const API_BASE = "http://localhost:8000/api/v1/fuel";
+const API_BASE = `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1/fuel`;
 
 async function api(path, opts = {}) {
   const tok = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
@@ -593,7 +593,7 @@ function ModalCarteForm({ editCard, onClose, onSuccess, showToast }) {
   const set = (k, v) => { setForm(f=>({...f,[k]:v})); setErrors(e=>({...e,[k]:""})); };
 
   useEffect(()=>{
-    fetch("http://localhost:8000/api/v1/vehicles/",{headers:{Authorization:`Bearer ${localStorage.getItem("access_token")}`}})
+    fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1/vehicles/`,{headers:{Authorization:`Bearer ${localStorage.getItem("access_token")}`}})
       .then(r=>r.json())
       .then(d=>setVehicles(Array.isArray(d)?d:d?.results??[]))
       .catch(()=>setVehicles([]));

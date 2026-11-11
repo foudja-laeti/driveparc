@@ -13,7 +13,7 @@ export default function OAuthCallback({ onLogin }) {
     }
 
     // Récupère le profil avec le token
-    fetch("http://localhost:8000/api/v1/auth/profile/", {
+      fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}/api/v1/auth/profile/`, {
       headers: { Authorization: `Bearer ${access}` }
     })
       .then(r => r.json())
